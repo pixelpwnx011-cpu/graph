@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>GeoGraph Teach</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <nav id="sidebar">
+    <div class="brand">
+      <div class="brand-logo">GT</div>
+      <div class="brand-text">GeoGraph<span>Teach</span></div>
+    </div>
+    <button class="nav-btn active" data-tab="home">🏠<span>Home</span></button>
+    <button class="nav-btn" data-tab="graph2d">📈<span>2D Graphing</span></button>
+    <button class="nav-btn" data-tab="graph3d">🧊<span>3D Graphing</span></button>
+    <button class="nav-btn" data-tab="geom">📐<span>Geometry</span></button>
+    <button class="nav-btn" data-tab="trig">🌀<span>Trigonometry</span></button>
+
+    <div class="sidebar-footer">
+      <label class="switch-row">
+        <span>Show Labels</span>
+        <input type="checkbox" id="labelsToggle" checked />
+      </label>
+    </div>
+  </nav>
+
+  <main id="content">
+
+    <!-- HOME -->
+    <section class="tab active" id="tab-home">
+      <div class="home-wrap">
+        <h1>Welcome to GeoGraph Teach</h1>
+        <p class="subtitle">An offline graphing &amp; geometry toolkit built for the classroom smart board.</p>
+        <div class="card-grid">
+          <div class="tool-card" data-goto="graph2d">
+            <div class="tool-icon">📈</div>
+            <h3>2D Graphing</h3>
+            <p>Plot any equation y=f(x), x=f(y), polar r=f(θ) or parametric curves. Drag sliders to see parameters change the curve live.</p>
+          </div>
+          <div class="tool-card" data-goto="graph3d">
+            <div class="tool-icon">🧊</div>
+            <h3>3D Graphing</h3>
+            <p>Plot surfaces z=f(x,y), rotate with a finger, and see height mapped to colour.</p>
+          </div>
+          <div class="tool-card" data-goto="geom">
+            <div class="tool-icon">📐</div>
+            <h3>Coordinate Geometry</h3>
+            <p>Tap to plot points, measure distance (including from the origin), midpoint, slope and polygon area.</p>
+          </div>
+          <div class="tool-card" data-goto="trig">
+            <div class="tool-icon">🌀</div>
+            <h3>Trigonometry</h3>
+            <p>Drag the unit circle and watch sin, cos and tan trace out live on a synced graph.</p>
+          </div>
+        </div>
+        <div class="hint-box">
+          💡 Tip: turn on <b>Show Labels</b> in the sidebar to display the abscissa, ordinate, quadrants and coordinates for every point &mdash; great for teaching the basics.
+        </div>
+      </div>
+    </section>
+
+    <!-- 2D GRAPHING -->
+    <section class="tab" id="tab-graph2d">
+      <div class="tool-layout">
+        <aside class="side-panel">
+          <h2>Equations</h2>
+          <div id="eqList" class="eq-list"></div>
+          <button class="btn btn-primary full" id="addEqBtn">+ Add Equation</button>
+
+          <div class="fn-palette" id="fnPalette2d"></div>
+
+          <hr/>
+          <details class="collapsible" open>
+            <summary>✏️ Draw / Enter Points &rarr; Equation</summary>
+            <p class="hint">Tap <b>Place Points</b>, then tap the graph to mark points (or type coordinates below). Pick a curve type and generate its equation.</p>
+            <div class="row">
+              <button class="btn" id="togglePlacePoints">📍 Place Points: Off</button>
+              <button class="btn" id="clearFitPoints">Clear</button>
+            </div>
+            <div id="fitPointsTable" class="points-table"></div>
+            <div class="row">
+              <input type="number" id="fitX" placeholder="x" step="any" />
+              <input type="number" id="fitY" placeholder="y" step="any" />
+              <button class="btn" id="addFitPointBtn">Add</button>
+            </div>
+            <label class="field-label">Curve type</label>
+            <select id="fitType">
+              <option value="linear">Linear (y = ax + b)</option>
+              <option value="quadratic">Quadratic (y = ax&sup2; + bx + c)</option>
+              <option value="cubic">Cubic</option>
+              <option value="quartic">Quartic</option>
+              <option value="exponential">Exponential (y = a&middot;e^(bx))</option>
+              <option value="power">Power (y = a&middot;x^b)</option>
+            </select>
+            <button class="btn btn-primary full" id="generateFitBtn">Generate Equation</button>
+            <div id="fitResult" class="result-box"></div>
+          </details>
+
+          <button class="btn full" id="resetView2d">Reset View</button>
+        </aside>
+        <div class="canvas-wrap">
+          <canvas id="canvas2d"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3D GRAPHING -->
+    <section class="tab" id="tab-graph3d">
+      <div class="tool-layout">
+        <aside class="side-panel">
+          <h2>Surfaces z = f(x, y)</h2>
+          <div id="surfList" class="eq-list"></div>
+          <button class="btn btn-primary full" id="addSurfBtn">+ Add Surface</button>
+          <div class="fn-palette" id="fnPalette3d"></div>
+          <hr/>
+          <label class="field-label">Resolution</label>
+          <input type="range" id="resSlider" min="10" max="50" value="28" />
+          <label class="switch-row"><span>Wireframe only</span><input type="checkbox" id="wireframeToggle" /></label>
+          <button class="btn full" id="resetView3d">Reset View</button>
+          <p class="hint">Drag with one finger to rotate. Pinch (or scroll) to zoom.</p>
+        </aside>
+        <div class="canvas-wrap">
+          <canvas id="canvas3d"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- GEOMETRY -->
+    <section class="tab" id="tab-geom">
+      <div class="tool-layout">
+        <aside class="side-panel">
+          <h2>Coordinate Geometry</h2>
+          <p class="hint">Tap the plane to add points A, B, C&hellip; Drag any point to move it.</p>
+          <div class="row">
+            <button class="btn" id="undoPointBtn">Undo</button>
+            <button class="btn" id="clearPointsBtn">Clear</button>
+          </div>
+          <div id="geomPointsTable" class="points-table"></div>
+          <div id="geomResults" class="result-box"></div>
+          <button class="btn full" id="resetViewGeom">Reset View</button>
+        </aside>
+        <div class="canvas-wrap">
+          <canvas id="canvasGeom"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRIGONOMETRY -->
+    <section class="tab" id="tab-trig">
+      <div class="tool-layout trig-layout">
+        <aside class="side-panel">
+          <h2>Unit Circle</h2>
+          <div id="trigValues" class="result-box"></div>
+          <label class="switch-row"><span>Degrees</span><input type="checkbox" id="degToggle" /></label>
+          <div class="row">
+            <button class="btn" data-angle="0">0&deg;</button>
+            <button class="btn" data-angle="30">30&deg;</button>
+            <button class="btn" data-angle="45">45&deg;</button>
+            <button class="btn" data-angle="60">60&deg;</button>
+            <button class="btn" data-angle="90">90&deg;</button>
+          </div>
+          <hr/>
+          <h2>Graph Function</h2>
+          <select id="trigFn">
+            <option value="sin">sin</option>
+            <option value="cos">cos</option>
+            <option value="tan">tan</option>
+          </select>
+          <label class="field-label">Amplitude (a)</label>
+          <input type="range" id="trigA" min="-3" max="3" step="0.1" value="1" />
+          <label class="field-label">Frequency (b)</label>
+          <input type="range" id="trigB" min="0.2" max="4" step="0.1" value="1" />
+          <label class="field-label">Phase shift (c)</label>
+          <input type="range" id="trigC" min="-3.14" max="3.14" step="0.1" value="0" />
+          <div id="trigEqLabel" class="result-box"></div>
+        </aside>
+        <div class="canvas-wrap trig-canvases">
+          <canvas id="canvasUnit"></canvas>
+          <canvas id="canvasTrigGraph"></canvas>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="js/parser.js"></script>
+<script src="js/fit.js"></script>
+<script src="js/graph2d.js"></script>
+<script src="js/graph3d.js"></script>
+<script src="js/geometry.js"></script>
+<script src="js/trig.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
