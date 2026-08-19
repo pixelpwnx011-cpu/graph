@@ -5,14 +5,17 @@
 class GeometryTool {
   constructor(canvas, onChange) {
     this.plane = new GraphPlane(canvas);
-    this.points = []; // {x, y, label}
+    this.points = []; // {x, y}
     this.dragIdx = -1;
+    this.closed = false;      // true once the shape has been closed into a polygon
+    this._downPt = null;      // pointerdown screen position, to distinguish a tap from a drag
+    this._downOnFirst = false;
     this.onChange = onChange || function () {};
 
     this.plane.onDraw = (p) => this._draw(p);
     this.plane.onPointerDown = (e, p) => this._pointerDown(e, p);
     this.plane.onPointerMove = (e, p, dx, dy) => this._pointerMove(e, p, dx, dy);
-    this.plane.onPointerUp = () => { this.dragIdx = -1; };
+    this.plane.onPointerUp = (e) => this._pointerUp(e);
   }
 
   static label(i) {
@@ -27,15 +30,40 @@ class GeometryTool {
     this.plane.render();
     this.onChange(this.points);
   }
-  undo() { this.points.pop(); this.plane.render(); this.onChange(this.points); }
-  clear() { this.points = []; this.plane.render(); this.onChange(this.points); }
+  // Directly set/edit a point's coordinates (used by the "type coordinates" table).
+  setPoint(i, x, y) {
+    if (i < 0 || i >= this.points.length || !isFinite(x) || !isFinite(y)) return;
+    this.points[i] = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+    this.plane.render();
+    this.onChange(this.points);
+  }
+  removePoint(i) {
+    this.points.splice(i, 1);
+    if (this.points.length < 3) this.closed = false;
+    this.plane.render();
+    this.onChange(this.points);
+  }
+  undo() { this.points.pop(); if (this.points.length < 3) this.closed = false; this.plane.render(); this.onChange(this.points); }
+  clear() { this.points = []; this.closed = false; this.plane.render(); this.onChange(this.points); }
+  toggleClosed() {
+    if (this.points.length < 3) return;
+    this.closed = !this.closed;
+    this.plane.render();
+    this.onChange(this.points);
+  }
 
   _pointerDown(e, plane) {
     const rect = plane.canvas.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    this._downPt = { x: e.clientX, y: e.clientY };
+    this._downOnFirst = false;
     for (let i = 0; i < this.points.length; i++) {
       const s = plane.worldToScreen(this.points[i].x, this.points[i].y);
-      if (Math.hypot(s.x - px, s.y - py) < 18) { this.dragIdx = i; return; }
+      if (Math.hypot(s.x - px, s.y - py) < 18) {
+        this.dragIdx = i;
+        if (i === 0 && this.points.length >= 3) this._downOnFirst = true;
+        return;
+      }
     }
     const world = plane.screenToWorld(px, py);
     this.addPoint(world.x, world.y);
@@ -56,20 +84,45 @@ class GeometryTool {
     plane.render();
   }
 
+  _pointerUp(e) {
+    // A short tap (barely any movement) landing back on the first point,
+    // once at least 3 points already exist, closes the shape into a polygon
+    // instead of dragging point A. A real drag still moves it as normal.
+    if (this._downOnFirst && this._downPt && e) {
+      const moved = Math.hypot(e.clientX - this._downPt.x, e.clientY - this._downPt.y);
+      if (moved < 6) {
+        this.closed = true;
+        this.plane.render();
+        this.onChange(this.points);
+      }
+    }
+    this.dragIdx = -1;
+    this._downOnFirst = false;
+    this._downPt = null;
+  }
+
   _draw(plane) {
     const ctx = plane.ctx;
     const showLabels = window.APP_STATE && window.APP_STATE.showLabels;
 
     // connecting lines
     if (this.points.length > 1) {
-      ctx.strokeStyle = '#2563eb';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = this.closed ? '#1d4ed8' : '#2563eb';
+      ctx.lineWidth = this.closed ? 2.5 : 2;
       ctx.beginPath();
       this.points.forEach((p, i) => {
         const s = plane.worldToScreen(p.x, p.y);
         if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
       });
+      if (this.closed && this.points.length >= 3) {
+        const s0 = plane.worldToScreen(this.points[0].x, this.points[0].y);
+        ctx.lineTo(s0.x, s0.y);
+      }
       ctx.stroke();
+      if (this.closed && this.points.length >= 3) {
+        ctx.fillStyle = 'rgba(37,99,235,0.12)';
+        ctx.fill();
+      }
     }
 
     // lines from origin (distance-from-origin visualisation)
@@ -85,12 +138,24 @@ class GeometryTool {
       ctx.setLineDash([]);
     }
 
+    // hint ring around point A once it can be tapped to close the polygon
+    if (!this.closed && this.points.length >= 3) {
+      const s0 = plane.worldToScreen(this.points[0].x, this.points[0].y);
+      ctx.beginPath();
+      ctx.arc(s0.x, s0.y, 13, 0, Math.PI * 2);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.setLineDash([3, 3]);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // points
     this.points.forEach((p, i) => {
       const s = plane.worldToScreen(p.x, p.y);
       ctx.beginPath();
       ctx.arc(s.x, s.y, 7, 0, Math.PI * 2);
-      ctx.fillStyle = '#1d4ed8';
+      ctx.fillStyle = (i === 0 && this.closed) ? '#059669' : '#1d4ed8';
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;

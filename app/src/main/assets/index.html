@@ -134,11 +134,22 @@
       <div class="tool-layout">
         <aside class="side-panel">
           <h2>Coordinate Geometry</h2>
-          <p class="hint">Tap the plane to add points A, B, C&hellip; Drag any point to move it.</p>
+          <p class="hint">Tap the plane to add points A, B, C&hellip; Drag any point to move it, or type exact coordinates below. Once you have 3+ points, tap point <b>A</b> again (or press "Close Polygon") to join the shape into a closed polygon.</p>
+
+          <label class="field-label">Add point by typing coordinates</label>
+          <div class="row">
+            <input type="number" id="geomX" placeholder="x" step="any" />
+            <input type="number" id="geomY" placeholder="y" step="any" />
+            <button class="btn" id="addGeomPointBtn">Add</button>
+          </div>
+
           <div class="row">
             <button class="btn" id="undoPointBtn">Undo</button>
             <button class="btn" id="clearPointsBtn">Clear</button>
           </div>
+          <button class="btn full" id="closePolygonBtn">⬠ Close Polygon</button>
+
+          <label class="field-label">Points (edit coordinates directly)</label>
           <div id="geomPointsTable" class="points-table"></div>
           <div id="geomResults" class="result-box"></div>
           <button class="btn full" id="resetViewGeom">Reset View</button>

@@ -263,16 +263,37 @@ const geomTool = new GeometryTool(document.getElementById('canvasGeom'), onGeomC
 
 function onGeomChange(points) {
   const table = document.getElementById('geomPointsTable');
-  if (!points.length) { table.innerHTML = '<p class="hint">Tap the plane to add a point.</p>'; }
+  if (!points.length) { table.innerHTML = '<p class="hint">Tap the plane, or type coordinates above, to add a point.</p>'; }
   else {
     let html = '<table>';
     points.forEach((p, i) => {
       const d0 = GeometryTool.distFromOrigin(p).toFixed(2);
-      html += `<tr><td>${GeometryTool.label(i)}</td><td>(${p.x}, ${p.y})</td><td title="distance from origin">O-dist: ${d0}</td></tr>`;
+      html += `<tr>
+        <td>${GeometryTool.label(i)}</td>
+        <td><input type="number" step="any" class="pt-edit" data-i="${i}" data-axis="x" value="${p.x}" /></td>
+        <td><input type="number" step="any" class="pt-edit" data-i="${i}" data-axis="y" value="${p.y}" /></td>
+        <td title="distance from origin">O: ${d0}</td>
+        <td data-del="${i}">✕</td>
+      </tr>`;
     });
     html += '</table>';
     table.innerHTML = html;
+    table.querySelectorAll('.pt-edit').forEach((inp) => inp.addEventListener('change', () => {
+      const i = parseInt(inp.dataset.i, 10);
+      const p = geomTool.points[i];
+      const x = inp.dataset.axis === 'x' ? parseFloat(inp.value) : p.x;
+      const y = inp.dataset.axis === 'y' ? parseFloat(inp.value) : p.y;
+      geomTool.setPoint(i, x, y);
+    }));
+    table.querySelectorAll('[data-del]').forEach((td) => td.addEventListener('click', () => {
+      geomTool.removePoint(parseInt(td.dataset.del, 10));
+    }));
   }
+
+  const closeBtn = document.getElementById('closePolygonBtn');
+  closeBtn.disabled = points.length < 3;
+  closeBtn.textContent = geomTool.closed ? '⬠ Open Polygon' : '⬠ Close Polygon';
+  closeBtn.classList.toggle('btn-primary', geomTool.closed);
 
   const results = document.getElementById('geomResults');
   let html = '';
@@ -302,6 +323,16 @@ onGeomChange([]);
 document.getElementById('undoPointBtn').addEventListener('click', () => geomTool.undo());
 document.getElementById('clearPointsBtn').addEventListener('click', () => geomTool.clear());
 document.getElementById('resetViewGeom').addEventListener('click', () => geomTool.plane.resetView());
+document.getElementById('closePolygonBtn').addEventListener('click', () => geomTool.toggleClosed());
+document.getElementById('addGeomPointBtn').addEventListener('click', () => {
+  const x = parseFloat(document.getElementById('geomX').value);
+  const y = parseFloat(document.getElementById('geomY').value);
+  if (isFinite(x) && isFinite(y)) {
+    geomTool.addPoint(x, y);
+    document.getElementById('geomX').value = '';
+    document.getElementById('geomY').value = '';
+  }
+});
 
 /* ================= TRIGONOMETRY ================= */
 const unitCircle = new UnitCircle(document.getElementById('canvasUnit'), onAngleChange);

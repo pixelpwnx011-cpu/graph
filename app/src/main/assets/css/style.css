@@ -105,10 +105,13 @@ hr { border: none; border-top: 1px solid #e2e8f0; margin: 14px 0; }
 .collapsible summary { cursor: pointer; font-weight: 700; font-size: 13px; color: #0f172a; padding: 6px 0; }
 .hint { font-size: 12px; color: #64748b; margin: 4px 0 8px; line-height: 1.4; }
 
-.points-table { max-height: 140px; overflow-y: auto; font-size: 12px; margin: 8px 0; }
+.points-table { max-height: 170px; overflow-y: auto; font-size: 12px; margin: 8px 0; }
 .points-table table { width: 100%; border-collapse: collapse; }
-.points-table td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; }
-.points-table td:last-child { text-align: right; cursor: pointer; color: #dc2626; }
+.points-table td { padding: 4px 3px; border-bottom: 1px solid #f1f5f9; }
+.points-table td:last-child { text-align: right; cursor: pointer; color: #dc2626; font-weight: 700; width: 18px; }
+.points-table input.pt-edit { width: 100%; min-width: 0; padding: 4px; font-size: 12px; border: 1px solid #e2e8f0; border-radius: 5px; }
+
+.btn:disabled { opacity: .45; cursor: default; }
 
 .result-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 13px; color: #0f172a; line-height: 1.6; margin: 8px 0; }
 .result-box b { color: #1d4ed8; }
