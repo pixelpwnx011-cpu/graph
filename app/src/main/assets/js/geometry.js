@@ -10,6 +10,7 @@ class GeometryTool {
     this.closed = false;      // true once the shape has been closed into a polygon
     this._downPt = null;      // pointerdown screen position, to distinguish a tap from a drag
     this._downOnFirst = false;
+    this.snapEnabled = false; // when on, points snap to the nearest grid scale marking
     this.onChange = onChange || function () {};
 
     this.plane.onDraw = (p) => this._draw(p);
@@ -25,15 +26,34 @@ class GeometryTool {
     return s;
   }
 
+  // When snapping is on, rounds to the nearest current grid line (the same
+  // spacing shown on the axes); otherwise just rounds to 2 decimal places.
+  _snap(x, y) {
+    if (!this.snapEnabled) return { x: (Math.round(x * 100) / 100) || 0, y: (Math.round(y * 100) / 100) || 0 };
+    const step = this.plane.getGridStep();
+    return { x: (Math.round(x / step) * step) || 0, y: (Math.round(y / step) * step) || 0 };
+  }
+
+  setSnapEnabled(on) {
+    this.snapEnabled = on;
+    if (on) {
+      // re-snap every existing point immediately so turning the toggle on
+      // has an obvious, immediate effect instead of only affecting new points
+      this.points = this.points.map((p) => this._snap(p.x, p.y));
+      this.plane.render();
+      this.onChange(this.points);
+    }
+  }
+
   addPoint(x, y) {
-    this.points.push({ x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 });
+    this.points.push(this._snap(x, y));
     this.plane.render();
     this.onChange(this.points);
   }
   // Directly set/edit a point's coordinates (used by the "type coordinates" table).
   setPoint(i, x, y) {
     if (i < 0 || i >= this.points.length || !isFinite(x) || !isFinite(y)) return;
-    this.points[i] = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
+    this.points[i] = this._snap(x, y);
     this.plane.render();
     this.onChange(this.points);
   }
@@ -74,7 +94,7 @@ class GeometryTool {
       const rect = plane.canvas.getBoundingClientRect();
       const px = e.clientX - rect.left, py = e.clientY - rect.top;
       const world = plane.screenToWorld(px, py);
-      this.points[this.dragIdx] = { x: Math.round(world.x * 100) / 100, y: Math.round(world.y * 100) / 100 };
+      this.points[this.dragIdx] = this._snap(world.x, world.y);
       plane.render();
       this.onChange(this.points);
       return;

@@ -15,8 +15,7 @@
       <div class="brand-text">GeoGraph<span>Teach</span></div>
     </div>
     <button class="nav-btn active" data-tab="home">🏠<span>Home</span></button>
-    <button class="nav-btn" data-tab="graph2d">📈<span>2D Graphing</span></button>
-    <button class="nav-btn" data-tab="graph3d">🧊<span>3D Graphing</span></button>
+    <button class="nav-btn" data-tab="graph">📊<span>Graphing</span></button>
     <button class="nav-btn" data-tab="geom">📐<span>Geometry</span></button>
     <button class="nav-btn" data-tab="trig">🌀<span>Trigonometry</span></button>
 
@@ -36,15 +35,10 @@
         <h1>Welcome to GeoGraph Teach</h1>
         <p class="subtitle">An offline graphing &amp; geometry toolkit built for the classroom smart board.</p>
         <div class="card-grid">
-          <div class="tool-card" data-goto="graph2d">
-            <div class="tool-icon">📈</div>
-            <h3>2D Graphing</h3>
-            <p>Plot any equation y=f(x), x=f(y), polar r=f(θ) or parametric curves. Drag sliders to see parameters change the curve live.</p>
-          </div>
-          <div class="tool-card" data-goto="graph3d">
-            <div class="tool-icon">🧊</div>
-            <h3>3D Graphing</h3>
-            <p>Plot surfaces z=f(x,y), rotate with a finger, and see height mapped to colour.</p>
+          <div class="tool-card" data-goto="graph">
+            <div class="tool-icon">📊</div>
+            <h3>2D &amp; 3D Graphing</h3>
+            <p>Plot any equation &mdash; y=f(x), implicit relations, polar, parametric, or 3D surfaces z=f(x,y) &mdash; in one workspace. Switch between 2D and 3D any time.</p>
           </div>
           <div class="tool-card" data-goto="geom">
             <div class="tool-icon">📐</div>
@@ -54,7 +48,7 @@
           <div class="tool-card" data-goto="trig">
             <div class="tool-icon">🌀</div>
             <h3>Trigonometry</h3>
-            <p>Drag the unit circle and watch sin, cos and tan trace out live on a synced graph.</p>
+            <p>Drag the unit circle and watch all six trig ratios trace out live on a synced graph.</p>
           </div>
         </div>
         <div class="hint-box">
@@ -63,68 +57,86 @@
       </div>
     </section>
 
-    <!-- 2D GRAPHING -->
-    <section class="tab" id="tab-graph2d">
+    <!-- GRAPHING (2D + 3D merged) -->
+    <section class="tab" id="tab-graph">
       <div class="tool-layout">
         <aside class="side-panel">
-          <h2>Equations</h2>
-          <div id="eqList" class="eq-list"></div>
-          <button class="btn btn-primary full" id="addEqBtn">+ Add Equation</button>
+          <div class="mode-toggle">
+            <button class="mode-btn" id="mode2dBtn">📈 2D</button>
+            <button class="mode-btn active" id="mode3dBtn">🧊 3D</button>
+          </div>
 
-          <div class="fn-palette" id="fnPalette2d"></div>
+          <div id="panel2d" class="hidden">
+            <h2>Equations</h2>
+            <p class="hint">Type naturally &mdash; the app auto-detects the form: <code>y=sin(x)</code>, <code>x=y^2</code>, <code>r=2cos(&theta;)</code>, <code>x^2+y^2=25</code>, <code>x^2+y^2&lt;25</code>, or <code>x=cos(t), y=sin(t)</code>. Use <code>|x|</code> for absolute value and <code>mod(x,n)</code> for modulo.</p>
+            <div id="eqList" class="eq-list"></div>
+            <button class="btn btn-primary full" id="addEqBtn">+ Add Equation</button>
 
-          <hr/>
-          <details class="collapsible" open>
-            <summary>✏️ Draw / Enter Points &rarr; Equation</summary>
-            <p class="hint">Tap <b>Place Points</b>, then tap the graph to mark points (or type coordinates below). Pick a curve type and generate its equation.</p>
+            <div class="fn-palette" id="fnPalette2d"></div>
+
+            <hr/>
+            <details class="collapsible" open>
+              <summary>✏️ Draw / Enter Points &rarr; Equation</summary>
+              <p class="hint">Tap <b>Place Points</b>, then tap the graph to mark points (or type coordinates below). Pick a curve type and generate its equation.</p>
+              <div class="row">
+                <button class="btn" id="togglePlacePoints">📍 Place Points: Off</button>
+                <button class="btn" id="clearFitPoints">Clear</button>
+              </div>
+              <div id="fitPointsTable" class="points-table"></div>
+              <div class="row">
+                <input type="number" id="fitX" placeholder="x" step="any" />
+                <input type="number" id="fitY" placeholder="y" step="any" />
+                <button class="btn" id="addFitPointBtn">Add</button>
+              </div>
+              <label class="field-label">Curve type</label>
+              <select id="fitType">
+                <option value="linear">Linear (y = ax + b)</option>
+                <option value="quadratic">Quadratic (y = ax&sup2; + bx + c)</option>
+                <option value="cubic">Cubic</option>
+                <option value="quartic">Quartic</option>
+                <option value="exponential">Exponential (y = a&middot;e^(bx))</option>
+                <option value="power">Power (y = a&middot;x^b)</option>
+              </select>
+              <button class="btn btn-primary full" id="generateFitBtn">Generate Equation</button>
+              <div id="fitResult" class="result-box"></div>
+            </details>
+
+            <button class="btn full" id="resetView2d">Reset View</button>
+          </div>
+
+          <div id="panel3d">
+            <h2>Surfaces z = f(x, y)</h2>
+            <p class="hint">Supports <code>|x|</code> absolute value, <code>mod(x,n)</code>, and Iverson brackets <code>{condition}</code> (1 where true, 0 elsewhere &mdash; chain <code>{a}{b}</code> for AND) to carve out regions. The letter <code>t</code> is reserved for the animation clock below.</p>
+            <div id="surfList" class="eq-list"></div>
+            <button class="btn btn-primary full" id="addSurfBtn">+ Add Surface</button>
+
+            <hr/>
+            <h2>Parametric Curves x(t), y(t), z(t)</h2>
+            <p class="hint">Draw a 3D curve traced out as t sweeps from t&#8320; to t&#8321; &mdash; e.g. a polar curve r(&theta;) becomes x=r&middot;cos(t), y=r&middot;sin(t), z=0.</p>
+            <div id="curveList3d" class="eq-list"></div>
+            <button class="btn btn-primary full" id="addCurve3dBtn">+ Add Curve</button>
+            <button class="btn full" id="exampleSurfBtn">🦋 Insert Butterfly Curve Example</button>
+
+            <div class="fn-palette" id="fnPalette3d"></div>
+            <hr/>
+            <label class="field-label">Animation clock (t, for surfaces only)</label>
             <div class="row">
-              <button class="btn" id="togglePlacePoints">📍 Place Points: Off</button>
-              <button class="btn" id="clearFitPoints">Clear</button>
+              <button class="btn" id="timeToggleBtn">▶ Animate (t)</button>
+              <button class="btn" id="timeResetBtn">Reset t</button>
             </div>
-            <div id="fitPointsTable" class="points-table"></div>
-            <div class="row">
-              <input type="number" id="fitX" placeholder="x" step="any" />
-              <input type="number" id="fitY" placeholder="y" step="any" />
-              <button class="btn" id="addFitPointBtn">Add</button>
-            </div>
-            <label class="field-label">Curve type</label>
-            <select id="fitType">
-              <option value="linear">Linear (y = ax + b)</option>
-              <option value="quadratic">Quadratic (y = ax&sup2; + bx + c)</option>
-              <option value="cubic">Cubic</option>
-              <option value="quartic">Quartic</option>
-              <option value="exponential">Exponential (y = a&middot;e^(bx))</option>
-              <option value="power">Power (y = a&middot;x^b)</option>
-            </select>
-            <button class="btn btn-primary full" id="generateFitBtn">Generate Equation</button>
-            <div id="fitResult" class="result-box"></div>
-          </details>
-
-          <button class="btn full" id="resetView2d">Reset View</button>
+            <div id="timeValueLabel" class="result-box small">t = 0.00</div>
+            <hr/>
+            <label class="field-label">Resolution</label>
+            <input type="range" id="resSlider" min="10" max="90" value="42" />
+            <label class="switch-row"><span>Wireframe only</span><input type="checkbox" id="wireframeToggle" /></label>
+            <button class="btn full" id="resetView3d">Reset View</button>
+            <p class="hint">Drag with one finger to rotate. Pinch (or scroll) to zoom. Tap a coloured ball on the corner gizmo to snap to that view &mdash; just like Blender's viewport gizmo.</p>
+          </div>
         </aside>
         <div class="canvas-wrap">
-          <canvas id="canvas2d"></canvas>
-        </div>
-      </div>
-    </section>
-
-    <!-- 3D GRAPHING -->
-    <section class="tab" id="tab-graph3d">
-      <div class="tool-layout">
-        <aside class="side-panel">
-          <h2>Surfaces z = f(x, y)</h2>
-          <div id="surfList" class="eq-list"></div>
-          <button class="btn btn-primary full" id="addSurfBtn">+ Add Surface</button>
-          <div class="fn-palette" id="fnPalette3d"></div>
-          <hr/>
-          <label class="field-label">Resolution</label>
-          <input type="range" id="resSlider" min="10" max="50" value="28" />
-          <label class="switch-row"><span>Wireframe only</span><input type="checkbox" id="wireframeToggle" /></label>
-          <button class="btn full" id="resetView3d">Reset View</button>
-          <p class="hint">Drag with one finger to rotate. Pinch (or scroll) to zoom.</p>
-        </aside>
-        <div class="canvas-wrap">
+          <canvas id="canvas2d" class="hidden"></canvas>
           <canvas id="canvas3d"></canvas>
+          <canvas id="gizmoCanvas"></canvas>
         </div>
       </div>
     </section>
@@ -135,6 +147,9 @@
         <aside class="side-panel">
           <h2>Coordinate Geometry</h2>
           <p class="hint">Tap the plane to add points A, B, C&hellip; Drag any point to move it, or type exact coordinates below. Once you have 3+ points, tap point <b>A</b> again (or press "Close Polygon") to join the shape into a closed polygon.</p>
+
+          <label class="switch-row wide"><span>🧲 Round off points to grid</span><input type="checkbox" id="snapToggle" /></label>
+          <p class="hint">When on, every point you place or drag rounds to the nearest grid line shown on the axes.</p>
 
           <label class="field-label">Add point by typing coordinates</label>
           <div class="row">
@@ -164,34 +179,63 @@
     <section class="tab" id="tab-trig">
       <div class="tool-layout trig-layout">
         <aside class="side-panel">
-          <h2>Unit Circle</h2>
-          <div id="trigValues" class="result-box"></div>
-          <label class="switch-row"><span>Degrees</span><input type="checkbox" id="degToggle" /></label>
-          <div class="row">
-            <button class="btn" data-angle="0">0&deg;</button>
-            <button class="btn" data-angle="30">30&deg;</button>
-            <button class="btn" data-angle="45">45&deg;</button>
-            <button class="btn" data-angle="60">60&deg;</button>
-            <button class="btn" data-angle="90">90&deg;</button>
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="trigMode2dBtn">📈 2D</button>
+            <button class="mode-btn" id="trigMode3dBtn">🧊 3D</button>
           </div>
-          <hr/>
-          <h2>Graph Function</h2>
-          <select id="trigFn">
-            <option value="sin">sin</option>
-            <option value="cos">cos</option>
-            <option value="tan">tan</option>
-          </select>
-          <label class="field-label">Amplitude (a)</label>
-          <input type="range" id="trigA" min="-3" max="3" step="0.1" value="1" />
-          <label class="field-label">Frequency (b)</label>
-          <input type="range" id="trigB" min="0.2" max="4" step="0.1" value="1" />
-          <label class="field-label">Phase shift (c)</label>
-          <input type="range" id="trigC" min="-3.14" max="3.14" step="0.1" value="0" />
-          <div id="trigEqLabel" class="result-box"></div>
+
+          <div id="trigPanel2d">
+            <h2>Unit Circle</h2>
+            <div id="trigValues" class="result-box"></div>
+            <label class="switch-row wide"><span>Degrees</span><input type="checkbox" id="degToggle" /></label>
+            <div class="row wrap">
+              <button class="btn" data-angle="0">0&deg;</button>
+              <button class="btn" data-angle="30">30&deg;</button>
+              <button class="btn" data-angle="45">45&deg;</button>
+              <button class="btn" data-angle="60">60&deg;</button>
+              <button class="btn" data-angle="90">90&deg;</button>
+              <button class="btn" data-angle="180">180&deg;</button>
+              <button class="btn" data-angle="270">270&deg;</button>
+            </div>
+            <hr/>
+            <h2>Graph Function</h2>
+            <label class="field-label">Function</label>
+            <select id="trigFn">
+              <option value="sin">sin</option>
+              <option value="cos">cos</option>
+              <option value="tan">tan</option>
+              <option value="cot">cot</option>
+              <option value="sec">sec</option>
+              <option value="csc">csc</option>
+            </select>
+            <label class="switch-row"><span>Also show reciprocal function</span><input type="checkbox" id="trigReciprocal" /></label>
+            <label class="field-label">Amplitude (a)</label>
+            <input type="range" id="trigA" min="-3" max="3" step="0.1" value="1" />
+            <label class="field-label">Frequency (b)</label>
+            <input type="range" id="trigB" min="0.2" max="4" step="0.1" value="1" />
+            <label class="field-label">Phase shift (c)</label>
+            <input type="range" id="trigC" min="-3.14" max="3.14" step="0.1" value="0" />
+            <div id="trigEqLabel" class="result-box"></div>
+          </div>
+
+          <div id="trigPanel3d" class="hidden">
+            <h2>3D Trig Curves</h2>
+            <p class="hint">The default helix is a point moving around the unit circle with a third axis added for elapsed angle &mdash; this is why circular motion produces sine and cosine waves. Drag the unit circle back in 2D mode and switch here to see the marker travel along the coil. Add, edit, or remove curves below to explore others.</p>
+            <div id="trigCurveList" class="eq-list"></div>
+            <button class="btn btn-primary full" id="addTrigCurveBtn">+ Add Curve</button>
+            <div class="fn-palette" id="fnPaletteTrig3d"></div>
+            <hr/>
+            <button class="btn full" id="resetViewTrig3d">Reset View</button>
+            <p class="hint">Drag with one finger to rotate. Pinch (or scroll) to zoom. Tap a coloured ball on the corner gizmo to snap to that view.</p>
+          </div>
         </aside>
-        <div class="canvas-wrap trig-canvases">
+        <div class="canvas-wrap trig-canvases" id="trigCanvas2dWrap">
           <canvas id="canvasUnit"></canvas>
           <canvas id="canvasTrigGraph"></canvas>
+        </div>
+        <div class="canvas-wrap hidden" id="trigCanvas3dWrap">
+          <canvas id="canvasTrig3D"></canvas>
+          <canvas id="gizmoTrigCanvas"></canvas>
         </div>
       </div>
     </section>

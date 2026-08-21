@@ -1,6 +1,12 @@
 window.APP_STATE = { showLabels: true };
 
-const FN_PALETTE = ['sin(', 'cos(', 'tan(', 'sqrt(', 'log(', 'ln(', 'abs(', '^', 'pi', 'e', '(', ')'];
+const FN_PALETTE = [
+  'sin(', 'cos(', 'tan(', 'cot(', 'sec(', 'csc(',
+  'sqrt(', 'log(', 'ln(', 'abs(', 'mod(',
+  '|', '{', '}', '(', ')', '⟨', '⟩',
+  '<', '>', '≤', '≥', '≠',
+  '^', 'π', 'θ', 'e', '∞'
+];
 
 let activeInput = null;
 function trackFocus(el) { el.addEventListener('focus', () => { activeInput = el; }); }
@@ -20,28 +26,30 @@ function buildPalette(container) {
   FN_PALETTE.forEach((tok) => {
     const b = document.createElement('button');
     b.textContent = tok;
+    b.title = tok;
     b.addEventListener('click', () => insertAtCursor(tok));
     container.appendChild(b);
   });
+  // degree symbol needs a small macro rather than a single glyph the parser understands
+  const deg = document.createElement('button');
+  deg.textContent = '°';
+  deg.title = 'degrees (inserts *(pi/180) - put a number before it, e.g. 45°)';
+  deg.addEventListener('click', () => insertAtCursor('*(pi/180)'));
+  container.appendChild(deg);
 }
 
 /* ---------------- Tabs ---------------- */
-const tabInstancesInit = {};
-function initTabInstance(tab) {
-  if (tabInstancesInit[tab]) return;
-  tabInstancesInit[tab] = true;
-  if (tab === 'graph2d') grapher2d.plane._resize();
-  if (tab === 'graph3d') grapher3d._resize();
-  if (tab === 'geom') geomTool.plane._resize();
-  if (tab === 'trig') { unitCircle.plane._resize(); trigGrapher.plane._resize(); }
-}
 function goToTab(tab) {
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + tab));
   // force a resize even on repeat visits since layout may have changed while hidden
   requestAnimationFrame(() => {
-    if (tab === 'graph2d') grapher2d.plane._resize();
-    if (tab === 'graph3d') grapher3d._resize();
+    if (tab === 'graph') {
+      grapher2d.plane._resize();
+      grapher3d._resize();
+      if (graphMode === '3d') { grapher3d._resizeGizmo(); replayReveal3D(); } else { replayReveal2D(); }
+      grapher3d.render();
+    }
     if (tab === 'geom') geomTool.plane._resize();
     if (tab === 'trig') { unitCircle.plane._resize(); trigGrapher.plane._resize(); }
   });
@@ -59,6 +67,25 @@ document.getElementById('labelsToggle').addEventListener('change', (e) => {
   geomTool.plane.render();
   unitCircle.plane.render();
 });
+
+/* ---------------- 2D / 3D mode toggle (merged Graphing tab; opens in 3D by default) ---------------- */
+let graphMode = '3d';
+function setGraphMode(mode) {
+  graphMode = mode;
+  document.getElementById('mode2dBtn').classList.toggle('active', mode === '2d');
+  document.getElementById('mode3dBtn').classList.toggle('active', mode === '3d');
+  document.getElementById('panel2d').classList.toggle('hidden', mode !== '2d');
+  document.getElementById('panel3d').classList.toggle('hidden', mode !== '3d');
+  document.getElementById('canvas2d').classList.toggle('hidden', mode !== '2d');
+  document.getElementById('canvas3d').classList.toggle('hidden', mode !== '3d');
+  document.getElementById('gizmoCanvas').classList.toggle('hidden', mode !== '3d');
+  requestAnimationFrame(() => {
+    if (mode === '2d') { grapher2d.plane._resize(); replayReveal2D(); }
+    else { grapher3d._resize(); grapher3d._resizeGizmo(); replayReveal3D(); grapher3d.render(); }
+  });
+}
+document.getElementById('mode2dBtn').addEventListener('click', () => setGraphMode('2d'));
+document.getElementById('mode3dBtn').addEventListener('click', () => setGraphMode('3d'));
 
 /* ================= 2D GRAPHING ================= */
 const grapher2d = new Grapher2D(document.getElementById('canvas2d'));
@@ -78,24 +105,17 @@ function renderEqList() {
     swatch.className = 'eq-color';
     swatch.style.background = eq.color;
 
-    const typeSel = document.createElement('select');
-    typeSel.className = 'eq-type';
-    [['y', 'y=f(x)'], ['x', 'x=f(y)'], ['r', 'r=f(\u03B8)'], ['param', 'x,y=f(t)']].forEach(([v, t]) => {
-      const o = document.createElement('option'); o.value = v; o.textContent = t; if (v === eq.type) o.selected = true;
-      typeSel.appendChild(o);
-    });
-    typeSel.addEventListener('change', () => { eq.type = typeSel.value; grapher2d.recompile(eq); renderEqList(); grapher2d.plane.render(); });
-
     const input = document.createElement('input');
     input.className = 'eq-input';
-    input.placeholder = eq.type === 'param' ? 'x(t) = ...' : (eq.type === 'r' ? 'r(\u03B8) = ...' : (eq.type === 'x' ? 'x(y) = ...' : 'y = ...'));
-    input.value = eq.expr;
+    input.placeholder = 'y=sin(x)  or  x^2+y^2=25  or  x=cos(t),y=sin(t)';
+    input.value = eq.raw || '';
     trackFocus(input);
     input.addEventListener('input', () => {
-      eq.expr = input.value;
-      grapher2d.recompile(eq);
+      grapher2d.setEquationText(eq, input.value);
       input.classList.toggle('error', !!eq.error);
       errBox.textContent = eq.error || '';
+      badge.textContent = Grapher2D.typeLabel(eq);
+      extendBtn.style.display = (eq.type === 'y' || eq.type === 'x' || eq.type === 'rel') ? '' : 'none';
       renderParams();
       grapher2d.plane.render();
     });
@@ -109,22 +129,24 @@ function renderEqList() {
     delBtn.addEventListener('click', () => { grapher2d.removeEquation(eq.id); renderEqList(); });
 
     top.appendChild(swatch);
-    top.appendChild(typeSel);
     top.appendChild(input);
     top.appendChild(visBtn);
     top.appendChild(delBtn);
     row.appendChild(top);
 
-    let input2 = null;
-    if (eq.type === 'param') {
-      input2 = document.createElement('input');
-      input2.className = 'eq-input2';
-      input2.placeholder = 'y(t) = ...';
-      input2.value = eq.exprY;
-      trackFocus(input2);
-      input2.addEventListener('input', () => { eq.exprY = input2.value; grapher2d.recompile(eq); renderParams(); grapher2d.plane.render(); });
-      row.appendChild(input2);
-    }
+    const metaRow = document.createElement('div');
+    metaRow.className = 'eq-meta-row';
+    const badge = document.createElement('span');
+    badge.className = 'eq-badge';
+    badge.textContent = Grapher2D.typeLabel(eq);
+    const extendBtn = document.createElement('button');
+    extendBtn.className = 'eq-extend-btn';
+    extendBtn.textContent = '\u2B06 Extend to 3D';
+    extendBtn.style.display = (eq.type === 'y' || eq.type === 'x' || eq.type === 'rel') ? '' : 'none';
+    extendBtn.addEventListener('click', () => extendTo3D(eq));
+    metaRow.appendChild(badge);
+    metaRow.appendChild(extendBtn);
+    row.appendChild(metaRow);
 
     const errBox = document.createElement('div');
     errBox.className = 'eq-err';
@@ -152,6 +174,29 @@ function renderEqList() {
     list.appendChild(row);
   });
 }
+
+// Lifts a 2D relation into the 3D grapher as a raised ridge (equality curves)
+// or a flat plateau region (inequalities), reusing the same {condition} bracket
+// syntax the 3D surface parser already understands.
+function extendTo3D(eq) {
+  let expr = null;
+  const HEIGHT = 3, TOL = 0.25;
+  if (eq.type === 'rel') {
+    expr = (eq.op === '=')
+      ? `${HEIGHT}*{abs((${eq.lhsExpr}) - (${eq.rhsExpr})) < ${TOL}}`
+      : `${HEIGHT}*{(${eq.lhsExpr}) ${eq.op} (${eq.rhsExpr})}`;
+  } else if (eq.type === 'y' && eq.expr) {
+    expr = `${HEIGHT}*{abs(y - (${eq.expr})) < ${TOL}}`;
+  } else if (eq.type === 'x' && eq.expr) {
+    expr = `${HEIGHT}*{abs(x - (${eq.expr})) < ${TOL}}`;
+  }
+  if (!expr) return;
+  grapher3d.addSurface(expr, eq.color);
+  renderSurfList();
+  goToTab('graph');
+  setGraphMode('3d');
+}
+
 document.getElementById('addEqBtn').addEventListener('click', () => {
   grapher2d.addEquation('');
   renderEqList();
@@ -199,7 +244,7 @@ document.getElementById('generateFitBtn').addEventListener('click', () => {
   const resultBox = document.getElementById('fitResult');
   try {
     const result = CurveFit.fit(grapher2d.fitPoints, type);
-    const eq = grapher2d.addEquation(result.expr, 'y');
+    const eq = grapher2d.addEquation(result.expr);
     renderEqList();
     grapher2d.plane.render();
     resultBox.innerHTML = `<b>y = </b>${result.expr}<br/>R\u00B2 = ${(Math.round(result.r2 * 1000) / 1000)}`;
@@ -210,6 +255,13 @@ document.getElementById('generateFitBtn').addEventListener('click', () => {
 
 /* ================= 3D GRAPHING ================= */
 const grapher3d = new Grapher3D(document.getElementById('canvas3d'));
+grapher3d.attachGizmo(document.getElementById('gizmoCanvas'));
+
+// Replay the "draw the graph in" formation animation whenever the relevant
+// mode/tab actually becomes visible, rather than letting it finish silently
+// in the background before the person ever looks at it.
+function replayReveal2D() { grapher2d.equations.forEach((eq) => { if (!eq.error) grapher2d._startReveal(eq); }); }
+function replayReveal3D() { grapher3d.surfaces.forEach((s) => { if (!s.error) grapher3d._startReveal(s); }); }
 buildPalette(document.getElementById('fnPalette3d'));
 
 function renderSurfList() {
@@ -233,6 +285,7 @@ function renderSurfList() {
       s.expr = input.value; grapher3d.recompile(s);
       input.classList.toggle('error', !!s.error);
       errBox.textContent = s.error || '';
+      renderParams();
       grapher3d.render();
     });
 
@@ -250,13 +303,125 @@ function renderSurfList() {
     const errBox = document.createElement('div'); errBox.className = 'eq-err'; errBox.textContent = s.error || '';
     row.appendChild(errBox);
 
+    const paramsBox = document.createElement('div');
+    paramsBox.className = 'eq-params';
+    row.appendChild(paramsBox);
+    function renderParams() {
+      paramsBox.innerHTML = '';
+      Object.keys(s.params).forEach((p) => {
+        const wrap = document.createElement('div'); wrap.className = 'eq-param';
+        const lbl = document.createElement('span'); lbl.textContent = p + '=' + Math.round(s.params[p] * 100) / 100;
+        const slider = document.createElement('input');
+        slider.type = 'range'; slider.min = -10; slider.max = 10; slider.step = 0.1; slider.value = s.params[p];
+        slider.addEventListener('input', () => { s.params[p] = parseFloat(slider.value); lbl.textContent = p + '=' + Math.round(s.params[p] * 100) / 100; grapher3d.render(); });
+        wrap.appendChild(lbl); wrap.appendChild(slider);
+        paramsBox.appendChild(wrap);
+      });
+    }
+    renderParams();
+
     list.appendChild(row);
   });
 }
 document.getElementById('addSurfBtn').addEventListener('click', () => { grapher3d.addSurface(''); renderSurfList(); });
+document.getElementById('exampleSurfBtn').addEventListener('click', () => { insertButterflyExample(); });
+
+// Generic parametric-curve list UI, shared by the Graphing tab's 3D panel and
+// the Trigonometry tab's 3D panel - lets a person add, edit (make/change),
+// recolour, show/hide (select), and remove x(t)/y(t)/z(t) curves.
+function renderCurveList(grapher, listElId) {
+  const list = document.getElementById(listElId);
+  list.innerHTML = '';
+  grapher.curves.forEach((c) => {
+    const row = document.createElement('div');
+    row.className = 'eq-row';
+
+    const top = document.createElement('div');
+    top.className = 'eq-row-top';
+    const colorPicker = document.createElement('input');
+    colorPicker.type = 'color'; colorPicker.className = 'eq-color-picker'; colorPicker.value = c.color;
+    colorPicker.addEventListener('input', () => { c.color = colorPicker.value; grapher.render(); });
+    const titleLbl = document.createElement('span'); titleLbl.textContent = 'Curve'; titleLbl.style.fontSize = '13px'; titleLbl.style.color = '#475569'; titleLbl.style.flex = '1';
+    const visBtn = document.createElement('input');
+    visBtn.type = 'checkbox'; visBtn.className = 'eq-visible'; visBtn.checked = c.visible;
+    visBtn.addEventListener('change', () => { c.visible = visBtn.checked; grapher.render(); });
+    const delBtn = document.createElement('button');
+    delBtn.className = 'eq-btn'; delBtn.textContent = '🗑';
+    delBtn.addEventListener('click', () => { grapher.removeCurve(c.id); renderCurveList(grapher, listElId); });
+    top.appendChild(colorPicker); top.appendChild(titleLbl); top.appendChild(visBtn); top.appendChild(delBtn);
+    row.appendChild(top);
+
+    const errBox = document.createElement('div'); errBox.className = 'eq-err'; errBox.textContent = c.error || '';
+
+    const xyz = document.createElement('div');
+    xyz.className = 'curve-xyz-row';
+    const makeAxisInput = (axisLabel, exprKey) => {
+      const line = document.createElement('div'); line.className = 'curve-input-line';
+      const lbl = document.createElement('span'); lbl.textContent = axisLabel + '=';
+      const inp = document.createElement('input');
+      inp.className = 'eq-input'; inp.value = c[exprKey]; inp.placeholder = axisLabel + '(t)';
+      trackFocus(inp);
+      inp.addEventListener('input', () => {
+        c[exprKey] = inp.value;
+        grapher.recompileCurve(c);
+        inp.classList.toggle('error', !!c.error);
+        errBox.textContent = c.error || '';
+        grapher.render();
+      });
+      line.appendChild(lbl); line.appendChild(inp);
+      return line;
+    };
+    xyz.appendChild(makeAxisInput('x', 'exprX'));
+    xyz.appendChild(makeAxisInput('y', 'exprY'));
+    xyz.appendChild(makeAxisInput('z', 'exprZ'));
+    row.appendChild(xyz);
+
+    const trange = document.createElement('div');
+    trange.className = 'curve-trange-row';
+    const tMinInp = document.createElement('input'); tMinInp.type = 'number'; tMinInp.step = 'any'; tMinInp.value = Math.round(c.tMin * 1000) / 1000;
+    const tMaxInp = document.createElement('input'); tMaxInp.type = 'number'; tMaxInp.step = 'any'; tMaxInp.value = Math.round(c.tMax * 1000) / 1000;
+    tMinInp.addEventListener('change', () => { c.tMin = parseFloat(tMinInp.value) || 0; grapher.render(); });
+    tMaxInp.addEventListener('change', () => { c.tMax = parseFloat(tMaxInp.value) || 0; grapher.render(); });
+    trange.appendChild(document.createTextNode('t:'));
+    trange.appendChild(tMinInp);
+    trange.appendChild(document.createTextNode('to'));
+    trange.appendChild(tMaxInp);
+    row.appendChild(trange);
+
+    row.appendChild(errBox);
+    list.appendChild(row);
+  });
+}
+document.getElementById('addCurve3dBtn').addEventListener('click', () => {
+  grapher3d.addCurve('cos(t)', 'sin(t)', '0', PALETTE[grapher3d.curves.length % PALETTE.length], 0, Math.PI * 2);
+  renderCurveList(grapher3d, 'curveList3d');
+});
+
+// The classic Desmos-3D "butterfly", built from the polar rose curve
+// r = (sin(2*theta))^3 + (cos(0.5*theta))^3, rendered as a 3D parametric curve
+// x=r*cos(t), y=r*sin(t), z=0 so it can be freely rotated and inspected.
+function insertButterflyExample() {
+  grapher3d.surfaces = [];
+  grapher3d.curves = [];
+  const r = '((sin(2*t))^3 + (cos(0.5*t))^3)';
+  grapher3d.addCurve(`${r}*cos(t)`, `${r}*sin(t)`, '0', '#dc2626', 0, Math.PI * 4);
+  grapher3d.range = 2.5;
+  renderSurfList();
+  renderCurveList(grapher3d, 'curveList3d');
+  grapher3d.render();
+}
 document.getElementById('resSlider').addEventListener('input', (e) => { grapher3d.resolution = parseInt(e.target.value, 10); grapher3d.render(); });
 document.getElementById('wireframeToggle').addEventListener('change', (e) => { grapher3d.wireframe = e.target.checked; grapher3d.render(); });
 document.getElementById('resetView3d').addEventListener('click', () => grapher3d.resetView());
+
+/* ---- Animation clock (t) - drives sin(t)/cos(t) style time-based surfaces ---- */
+grapher3d.onTimeChange = (t) => { document.getElementById('timeValueLabel').textContent = 't = ' + t.toFixed(2); };
+document.getElementById('timeToggleBtn').addEventListener('click', () => {
+  const btn = document.getElementById('timeToggleBtn');
+  if (grapher3d.timeRunning) { grapher3d.stopTimeAnimation(); btn.textContent = '▶ Animate (t)'; }
+  else { grapher3d.startTimeAnimation(); btn.textContent = '⏸ Pause (t)'; }
+});
+document.getElementById('timeResetBtn').addEventListener('click', () => grapher3d.resetTime());
 
 /* ================= GEOMETRY ================= */
 const geomTool = new GeometryTool(document.getElementById('canvasGeom'), onGeomChange);
@@ -299,21 +464,27 @@ function onGeomChange(points) {
   let html = '';
   if (points.length === 1) {
     html += `<b>Distance from origin:</b> ${GeometryTool.distFromOrigin(points[0]).toFixed(3)}`;
-  } else if (points.length === 2) {
-    const [a, b] = points;
-    html += `<b>Distance A\u2192B:</b> ${GeometryTool.dist(a, b).toFixed(3)}<br/>`;
-    html += `<b>Dist. A from origin:</b> ${GeometryTool.distFromOrigin(a).toFixed(3)}<br/>`;
-    html += `<b>Dist. B from origin:</b> ${GeometryTool.distFromOrigin(b).toFixed(3)}<br/>`;
-    const m = GeometryTool.midpoint(a, b);
-    html += `<b>Midpoint:</b> (${m.x.toFixed(2)}, ${m.y.toFixed(2)})<br/>`;
-    const m2 = GeometryTool.slope(a, b);
-    html += `<b>Slope:</b> ${m2 === null ? 'undefined (vertical)' : m2.toFixed(3)}<br/>`;
-    html += `<b>Line equation:</b> ${GeometryTool.lineEquation(a, b)}`;
-  } else if (points.length >= 3) {
-    html += `<b>Perimeter:</b> ${GeometryTool.polygonPerimeter(points).toFixed(3)}<br/>`;
-    html += `<b>Area (shoelace):</b> ${GeometryTool.polygonArea(points).toFixed(3)}<br/>`;
-    html += `<b>Points from origin:</b><br/>`;
+  } else if (points.length >= 2) {
+    // distance from origin, for every point
+    html += `<b>Distance from origin:</b><br/>`;
     points.forEach((p, i) => { html += `${GeometryTool.label(i)}: ${GeometryTool.distFromOrigin(p).toFixed(2)}&nbsp;&nbsp;`; });
+    html += `<br/><br/><b>Distance between every pair of points:</b><br/>`;
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 1; j < points.length; j++) {
+        html += `${GeometryTool.label(i)}\u2192${GeometryTool.label(j)}: ${GeometryTool.dist(points[i], points[j]).toFixed(3)}<br/>`;
+      }
+    }
+    if (points.length === 2) {
+      const [a, b] = points;
+      const m = GeometryTool.midpoint(a, b);
+      html += `<br/><b>Midpoint:</b> (${m.x.toFixed(2)}, ${m.y.toFixed(2)})<br/>`;
+      const m2 = GeometryTool.slope(a, b);
+      html += `<b>Slope:</b> ${m2 === null ? 'undefined (vertical)' : m2.toFixed(3)}<br/>`;
+      html += `<b>Line equation:</b> ${GeometryTool.lineEquation(a, b)}`;
+    } else {
+      html += `<br/><b>Perimeter:</b> ${GeometryTool.polygonPerimeter(points).toFixed(3)}<br/>`;
+      html += `<b>Area (shoelace):</b> ${GeometryTool.polygonArea(points).toFixed(3)}`;
+    }
   } else {
     html = '<span style="color:#64748b">Add at least one point to see measurements.</span>';
   }
@@ -324,6 +495,7 @@ document.getElementById('undoPointBtn').addEventListener('click', () => geomTool
 document.getElementById('clearPointsBtn').addEventListener('click', () => geomTool.clear());
 document.getElementById('resetViewGeom').addEventListener('click', () => geomTool.plane.resetView());
 document.getElementById('closePolygonBtn').addEventListener('click', () => geomTool.toggleClosed());
+document.getElementById('snapToggle').addEventListener('change', (e) => geomTool.setSnapEnabled(e.target.checked));
 document.getElementById('addGeomPointBtn').addEventListener('click', () => {
   const x = parseFloat(document.getElementById('geomX').value);
   const y = parseFloat(document.getElementById('geomY').value);
@@ -343,12 +515,28 @@ function onAngleChange(angleRad) {
   const deg = angleRad * 180 / Math.PI;
   const box = document.getElementById('trigValues');
   const angleTxt = useDegrees ? `${deg.toFixed(1)}\u00B0` : `${angleRad.toFixed(3)} rad`;
+  const v = unitCircle.allValues();
+  const fmt = (n) => isNaN(n) ? 'undefined' : n.toFixed(3);
+  // show the exact radical/fraction form too whenever the angle lands on a
+  // standard reference angle (0/30/45/60/90 and their reflections), e.g. "0.866 (√3/2)"
+  const withExact = (fnKey, n) => {
+    const ex = exactTrigLabel(deg, fnKey);
+    if (ex === null || ex === 'undefined') return fmt(n);
+    return `${fmt(n)} (${ex})`;
+  };
   box.innerHTML =
     `<b>\u03B8 =</b> ${angleTxt}<br/>` +
-    `<b>sin \u03B8 =</b> ${Math.sin(angleRad).toFixed(3)}<br/>` +
-    `<b>cos \u03B8 =</b> ${Math.cos(angleRad).toFixed(3)}<br/>` +
-    `<b>tan \u03B8 =</b> ${Math.abs(Math.cos(angleRad)) < 1e-6 ? 'undefined' : Math.tan(angleRad).toFixed(3)}`;
+    `<b>sin \u03B8 =</b> ${withExact('sin', v.sin)}<br/>` +
+    `<b>cos \u03B8 =</b> ${withExact('cos', v.cos)}<br/>` +
+    `<b>tan \u03B8 =</b> ${withExact('tan', v.tan)}<br/>` +
+    `<b>cot \u03B8 =</b> ${withExact('cot', v.cot)}<br/>` +
+    `<b>sec \u03B8 =</b> ${withExact('sec', v.sec)}<br/>` +
+    `<b>csc \u03B8 =</b> ${withExact('csc', v.csc)}`;
   trigGrapher.setMarker(angleRad);
+  if (typeof helixCurve !== 'undefined') {
+    helixCurve.markerT = ((angleRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (typeof trigMode !== 'undefined' && trigMode === '3d') trigGrapher3d.render();
+  }
 }
 document.getElementById('degToggle').addEventListener('change', (e) => { useDegrees = e.target.checked; onAngleChange(unitCircle.angle); });
 document.querySelectorAll('[data-angle]').forEach((b) => b.addEventListener('click', () => {
@@ -364,12 +552,45 @@ function updateTrigEqLabel() {
   trigGrapher.setParams(fn, a, b, c);
 }
 ['trigFn', 'trigA', 'trigB', 'trigC'].forEach((id) => document.getElementById(id).addEventListener('input', updateTrigEqLabel));
+document.getElementById('trigReciprocal').addEventListener('change', (e) => trigGrapher.setShowReciprocal(e.target.checked));
 updateTrigEqLabel();
 
+/* ---- Trig 3D mode: the sin/cos helix (plus full curve add/edit/remove) ---- */
+const trigGrapher3d = new Grapher3D(document.getElementById('canvasTrig3D'));
+trigGrapher3d.attachGizmo(document.getElementById('gizmoTrigCanvas'));
+trigGrapher3d.range = 3;
+const helixCurve = trigGrapher3d.addCurve('cos(t)', 'sin(t)', 't*0.15', '#7c3aed', 0, Math.PI * 4);
+buildPalette(document.getElementById('fnPaletteTrig3d'));
+renderCurveList(trigGrapher3d, 'trigCurveList');
+document.getElementById('addTrigCurveBtn').addEventListener('click', () => {
+  trigGrapher3d.addCurve('cos(2*t)', 'sin(3*t)', '0', PALETTE[trigGrapher3d.curves.length % PALETTE.length], 0, Math.PI * 2);
+  renderCurveList(trigGrapher3d, 'trigCurveList');
+});
+
+let trigMode = '2d';
+function setTrigMode(mode) {
+  trigMode = mode;
+  document.getElementById('trigMode2dBtn').classList.toggle('active', mode === '2d');
+  document.getElementById('trigMode3dBtn').classList.toggle('active', mode === '3d');
+  document.getElementById('trigPanel2d').classList.toggle('hidden', mode !== '2d');
+  document.getElementById('trigPanel3d').classList.toggle('hidden', mode !== '3d');
+  document.getElementById('trigCanvas2dWrap').classList.toggle('hidden', mode === '3d');
+  document.getElementById('trigCanvas3dWrap').classList.toggle('hidden', mode !== '3d');
+  requestAnimationFrame(() => {
+    if (mode === '2d') { unitCircle.plane._resize(); trigGrapher.plane._resize(); }
+    else { trigGrapher3d._resize(); trigGrapher3d._resizeGizmo(); trigGrapher3d.render(); }
+  });
+}
+document.getElementById('trigMode2dBtn').addEventListener('click', () => setTrigMode('2d'));
+document.getElementById('trigMode3dBtn').addEventListener('click', () => setTrigMode('3d'));
+document.getElementById('resetViewTrig3d').addEventListener('click', () => trigGrapher3d.resetView());
+
 /* ================= Seed demo content ================= */
-grapher2d.addEquation('sin(x)');
-grapher2d.addEquation('0.5*x^2 - 2');
+// The polar-rose "butterfly" r = (sin(2θ))^3 + (cos(0.5θ))^3 is the default
+// graph shown to the teacher in both 2D (as a polar curve) and 3D (as the
+// same curve traced out in space, free to rotate).
+grapher2d.addEquation('r = (sin(2*theta))^3 + (cos(0.5*theta))^3');
 renderEqList();
-grapher3d.addSurface('sin(sqrt(x^2+y^2))');
-renderSurfList();
+insertButterflyExample();
+
 onAngleChange(unitCircle.angle);

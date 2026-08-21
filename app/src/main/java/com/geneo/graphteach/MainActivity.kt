@@ -26,6 +26,10 @@ class MainActivity : AppCompatActivity() {
         webView = WebView(this)
         setContentView(webView)
 
+        // Force the GPU-composited hardware layer for the WebView so canvas-heavy
+        // graphing/animation stays smooth on the smart board's display.
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
         val settings: WebSettings = webView.settings
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true

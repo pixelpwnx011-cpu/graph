@@ -13,6 +13,8 @@ class GraphPlane {
     this._pointers = new Map();
     this._pinchStartDist = null;
     this._pinchStartSpan = null;
+    this.interacting = false;   // true while the user is actively panning/zooming - used to drop render quality for smoothness
+    this._interactTimer = null;
     this._resize();
     this._attachEvents();
     window.addEventListener('resize', () => this._resize());
@@ -56,6 +58,15 @@ class GraphPlane {
     return step * pow10;
   }
 
+  // The current major grid line spacing in world units - i.e. "one graph scale
+  // marking" at the current zoom level. Used both for drawing the grid and for
+  // snap-to-grid point placement in the geometry tool.
+  getGridStep() {
+    const xSpanWorld = this.width / this.scale;
+    const targetDiv = this.width / 90;
+    return this._niceStep(xSpanWorld / targetDiv);
+  }
+
   drawGrid(opts = {}) {
     const ctx = this.ctx;
     const showLabels = opts.labels !== false;
@@ -63,9 +74,7 @@ class GraphPlane {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, this.width, this.height);
 
-    const xSpanWorld = this.width / this.scale;
-    const targetDiv = this.width / 90;
-    const step = this._niceStep(xSpanWorld / targetDiv);
+    const step = this.getGridStep();
     const minorStep = step / 5;
 
     const left = this.cx - this.width / (2 * this.scale);
@@ -179,6 +188,12 @@ class GraphPlane {
     if (this.onDraw) this.onDraw(this);
   }
 
+  _markInteracting() {
+    this.interacting = true;
+    if (this._interactTimer) clearTimeout(this._interactTimer);
+    this._interactTimer = setTimeout(() => { this.interacting = false; this.render(); }, 160);
+  }
+
   _attachEvents() {
     const el = this.canvas;
     el.style.touchAction = 'none';
@@ -207,6 +222,7 @@ class GraphPlane {
         if (this._pinchStartDist) {
           const ratio = this._pinchStartDist / Math.max(dist, 1);
           this.span = Math.min(this.opts.maxSpan, Math.max(this.opts.minSpan, this._pinchStartSpan * ratio));
+          this._markInteracting();
           this.render();
         }
         return;
@@ -218,6 +234,7 @@ class GraphPlane {
       } else {
         this.cx -= dx / this.scale;
         this.cy += dy / this.scale;
+        this._markInteracting();
         this.render();
       }
     });
@@ -233,9 +250,96 @@ class GraphPlane {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 1.1 : 0.9;
       this.span = Math.min(this.opts.maxSpan, Math.max(this.opts.minSpan, this.span * factor));
+      this._markInteracting();
       this.render();
     }, { passive: false });
   }
+}
+
+/* ---------------- Implicit relation rendering helpers ---------------- */
+
+// Trace the zero-contour of fn(x,y) over a world-space window using marching squares.
+function marchingSquares(fn, xMin, xMax, yMin, yMax, nx, ny, plane, ctx) {
+  const dx = (xMax - xMin) / nx, dy = (yMax - yMin) / ny;
+  if (!(dx > 0) || !(dy > 0)) return;
+  const grid = [];
+  for (let j = 0; j <= ny; j++) {
+    const row = [];
+    const y = yMin + j * dy;
+    for (let i = 0; i <= nx; i++) {
+      const x = xMin + i * dx;
+      let v;
+      try { v = fn(x, y); } catch (e) { v = NaN; }
+      row.push(v);
+    }
+    grid.push(row);
+  }
+  const lerp = (a, b, va, vb) => {
+    const t = va === vb ? 0.5 : (-va) / (vb - va);
+    return a + (b - a) * t;
+  };
+  ctx.beginPath();
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const x0 = xMin + i * dx, x1 = x0 + dx, y0 = yMin + j * dy, y1 = y0 + dy;
+      const v00 = grid[j][i], v10 = grid[j][i + 1], v11 = grid[j + 1][i + 1], v01 = grid[j + 1][i];
+      if (!isFinite(v00) || !isFinite(v10) || !isFinite(v11) || !isFinite(v01)) continue;
+      const b00 = v00 >= 0, b10 = v10 >= 0, b11 = v11 >= 0, b01 = v01 >= 0;
+      if (b00 === b10 && b10 === b11 && b11 === b01) continue;
+      const eTop = b00 !== b10 ? { x: lerp(x0, x1, v00, v10), y: y0 } : null;
+      const eRight = b10 !== b11 ? { x: x1, y: lerp(y0, y1, v10, v11) } : null;
+      const eBottom = b01 !== b11 ? { x: lerp(x0, x1, v01, v11), y: y1 } : null;
+      const eLeft = b00 !== b01 ? { x: x0, y: lerp(y0, y1, v00, v01) } : null;
+      const pts = [eTop, eRight, eBottom, eLeft].filter(Boolean);
+      for (let k = 0; k + 1 < pts.length; k += 2) {
+        const p1 = plane.worldToScreen(pts[k].x, pts[k].y);
+        const p2 = plane.worldToScreen(pts[k + 1].x, pts[k + 1].y);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+      }
+    }
+  }
+  ctx.stroke();
+}
+
+// Fill every grid cell where boolFn(x,y) is true (used for inequality regions).
+function shadeRegion(boolFn, xMin, xMax, yMin, yMax, nx, ny, plane, ctx) {
+  const dx = (xMax - xMin) / nx, dy = (yMax - yMin) / ny;
+  if (!(dx > 0) || !(dy > 0)) return;
+  for (let j = 0; j < ny; j++) {
+    const y = yMin + (j + 0.5) * dy;
+    for (let i = 0; i < nx; i++) {
+      const x = xMin + (i + 0.5) * dx;
+      let ok;
+      try { ok = boolFn(x, y); } catch (e) { ok = false; }
+      if (!ok) continue;
+      const s0 = plane.worldToScreen(xMin + i * dx, yMin + j * dy);
+      const s1 = plane.worldToScreen(xMin + (i + 1) * dx, yMin + (j + 1) * dy);
+      const rx = Math.min(s0.x, s1.x), ry = Math.min(s0.y, s1.y);
+      ctx.fillRect(rx, ry, Math.abs(s1.x - s0.x) + 1, Math.abs(s1.y - s0.y) + 1);
+    }
+  }
+}
+
+function hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Finds the index of the first occurrence of any char in `chars` that sits at
+// bracket-nesting depth 0 (ignores characters inside (), {}, or |abs| pairs).
+function findTopLevelChar(str, chars) {
+  let depth = 0, absOpen = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (c === '|') { absOpen = !absOpen; continue; }
+    if (absOpen) continue;
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (depth === 0 && chars.includes(c)) return i;
+  }
+  return -1;
 }
 
 /* ---------------- Equation grapher built on GraphPlane ---------------- */
@@ -244,7 +348,7 @@ const PALETTE = ['#e63946', '#1d4ed8', '#059669', '#f59e0b', '#7c3aed', '#db2777
 class Grapher2D {
   constructor(canvas) {
     this.plane = new GraphPlane(canvas);
-    this.equations = []; // {id, expr, type, color, visible, compiled, error, params:{}}
+    this.equations = []; // {id, raw, type, expr, exprY, lhsExpr, rhsExpr, op, color, visible, compiled, error, params:{}}
     this._nextId = 1;
     this.fitPoints = [];      // points used for "draw / enter points -> equation"
     this.drawPointsMode = false;
@@ -253,6 +357,89 @@ class Grapher2D {
     this.plane.onPointerDown = (e, p) => this._handlePointerDown(e, p);
     this.plane.onPointerMove = (e, p, dx, dy) => this._handlePointerMove(e, p, dx, dy);
     this.plane.onPointerUp = () => { this._draggingFitIdx = -1; };
+  }
+
+  // Reads a single typed-in line ("y = sin(x)", "x^2+y^2=25", "x=cos(t), y=sin(t)", "sin(x)")
+  // and figures out on its own whether it's y=f(x), x=f(y), r=f(theta), a parametric pair,
+  // or a general implicit relation (equality curve or inequality region).
+  static autoDetect(raw) {
+    const s = (raw || '').trim();
+    const empty = { type: 'y', expr: '', exprY: '', lhsExpr: '', rhsExpr: '', op: '' };
+    if (!s) return empty;
+
+    const commaIdx = findTopLevelChar(s, ',');
+    if (commaIdx !== -1) {
+      const left = s.slice(0, commaIdx).trim();
+      const right = s.slice(commaIdx + 1).trim();
+      const splitVar = (part) => {
+        const rel = MathParser.splitRelation(part);
+        return rel ? { name: rel.lhs.trim().toLowerCase(), expr: rel.rhs.trim() } : null;
+      };
+      const l = splitVar(left), r = splitVar(right);
+      let xExpr = null, yExpr = null;
+      if (l && l.name === 'x') xExpr = l.expr; else if (r && r.name === 'x') xExpr = r.expr;
+      if (l && l.name === 'y') yExpr = l.expr; else if (r && r.name === 'y') yExpr = r.expr;
+      if (xExpr === null) xExpr = l ? l.expr : left;
+      if (yExpr === null) yExpr = r ? r.expr : right;
+      return { type: 'param', expr: xExpr, exprY: yExpr, lhsExpr: '', rhsExpr: '', op: '' };
+    }
+
+    let rel;
+    try { rel = MathParser.splitRelation(s); } catch (e) { rel = null; }
+    if (!rel) return { type: 'y', expr: s, exprY: '', lhsExpr: '', rhsExpr: '', op: '' };
+
+    const lhsBare = rel.lhs.trim().toLowerCase();
+    let rhsUsesX = false, rhsUsesY = false;
+    try { rhsUsesX = MathParser.usesVariable(rel.rhs, 'x'); rhsUsesY = MathParser.usesVariable(rel.rhs, 'y'); } catch (e) { /* ignore */ }
+
+    if (rel.op === '=' && lhsBare === 'y' && !rhsUsesY) return { type: 'y', expr: rel.rhs, exprY: '', lhsExpr: '', rhsExpr: '', op: '' };
+    if (rel.op === '=' && lhsBare === 'x' && !rhsUsesX) return { type: 'x', expr: rel.rhs, exprY: '', lhsExpr: '', rhsExpr: '', op: '' };
+    if (lhsBare === 'r') return { type: 'r', expr: rel.rhs, exprY: '', lhsExpr: '', rhsExpr: '', op: '' };
+
+    return { type: 'rel', expr: s, exprY: '', lhsExpr: rel.lhs, rhsExpr: rel.rhs, op: rel.op };
+  }
+
+  static typeLabel(eq) {
+    switch (eq.type) {
+      case 'y': return 'y = f(x)';
+      case 'x': return 'x = f(y)';
+      case 'r': return 'r = f(\u03B8)  polar';
+      case 'param': return 'x,y = f(t)  parametric';
+      case 'rel': return eq.op === '=' ? 'implicit curve' : 'inequality region';
+      default: return '';
+    }
+  }
+
+  setEquationText(eq, raw) {
+    eq.raw = raw;
+    const det = Grapher2D.autoDetect(raw);
+    Object.assign(eq, det);
+    this.recompile(eq);
+    if (!eq.error) this._startReveal(eq);
+  }
+
+  // Kick off a short "draw the curve in" animation whenever an equation is
+  // (re)plotted, instead of it just popping onto the screen instantly.
+  _startReveal(eq) {
+    eq._revealStart = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    this._runAnimLoop();
+  }
+  _revealProgress(eq) {
+    if (!eq._revealStart) return 1;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const t = Math.min(1, (now - eq._revealStart) / 550);
+    return 1 - Math.pow(1 - t, 3); // easeOutCubic
+  }
+  _runAnimLoop() {
+    if (this._animRunning) return;
+    this._animRunning = true;
+    const step = () => {
+      this.plane.render();
+      const stillGoing = this.equations.some((eq) => eq._revealStart && this._revealProgress(eq) < 1);
+      if (stillGoing) requestAnimationFrame(step);
+      else this._animRunning = false;
+    };
+    requestAnimationFrame(step);
   }
 
   _handlePointerDown(e, plane) {
@@ -284,6 +471,7 @@ class Grapher2D {
     if (this.drawPointsMode) return; // don't pan while placing points
     plane.cx -= dx / plane.scale;
     plane.cy += dy / plane.scale;
+    plane._markInteracting();
     plane.render();
   }
 
@@ -309,20 +497,22 @@ class Grapher2D {
     });
   }
 
-  addEquation(expr = '', type = 'y') {
+  addEquation(raw = '') {
     const eq = {
       id: this._nextId++,
-      expr,
-      type, // 'y' -> y=f(x), 'x' -> x=f(y), 'r' -> r=f(theta), 'param' -> x=f(t),y=g(t)
-      exprY: '',
+      raw: '',
+      type: 'y', expr: '', exprY: '', lhsExpr: '', rhsExpr: '', op: '',
       color: PALETTE[(this.equations.length) % PALETTE.length],
       visible: true,
       compiled: null,
       compiledY: null,
+      compiledLhs: null,
+      compiledRhs: null,
       error: null,
-      params: {}
+      params: {},
+      extended3d: false
     };
-    this.recompile(eq);
+    this.setEquationText(eq, raw);
     this.equations.push(eq);
     return eq;
   }
@@ -342,11 +532,18 @@ class Grapher2D {
         eq.compiled = eq.expr ? MathParser.compile(eq.expr, ['theta']) : null;
       } else if (eq.type === 'x') {
         eq.compiled = eq.expr ? MathParser.compile(eq.expr, ['y']) : null;
+      } else if (eq.type === 'rel') {
+        eq.compiledLhs = eq.lhsExpr ? MathParser.compile(eq.lhsExpr, ['x', 'y']) : null;
+        eq.compiledRhs = eq.rhsExpr ? MathParser.compile(eq.rhsExpr, ['x', 'y']) : null;
+        eq.compiled = eq.compiledLhs;
+        if (!eq.compiledLhs || !eq.compiledRhs) throw new Error('Incomplete relation');
       } else {
         eq.compiled = eq.expr ? MathParser.compile(eq.expr, ['x']) : null;
       }
       const params = {};
-      const src = (eq.compiled ? eq.compiled.params : []).concat(eq.compiledY ? eq.compiledY.params : []);
+      const src = eq.type === 'rel'
+        ? (eq.compiledLhs.params).concat(eq.compiledRhs.params)
+        : (eq.compiled ? eq.compiled.params : []).concat(eq.compiledY ? eq.compiledY.params : []);
       src.forEach((p) => { params[p] = (eq.params && p in eq.params) ? eq.params[p] : 1; });
       eq.params = params;
     } catch (err) {
@@ -357,15 +554,51 @@ class Grapher2D {
 
   _drawEquations(plane) {
     const ctx = plane.ctx;
+    const interacting = plane.interacting;
     for (const eq of this.equations) {
-      if (!eq.visible || !eq.compiled || eq.error) continue;
+      if (!eq.visible || eq.error) continue;
+      const progress = this._revealProgress(eq);
+      if (progress <= 0) continue;
+
+      if (eq.type === 'rel') {
+        if (!eq.compiledLhs || !eq.compiledRhs) continue;
+        const fn = (x, y) => eq.compiledLhs.eval(Object.assign({ x, y }, eq.params)) - eq.compiledRhs.eval(Object.assign({ x, y }, eq.params));
+        const left = plane.cx - plane.width / (2 * plane.scale);
+        const right = plane.cx + plane.width / (2 * plane.scale);
+        const top = plane.cy + plane.height / (2 * plane.scale);
+        const bottom = plane.cy - plane.height / (2 * plane.scale);
+        // drop the sampling grid resolution while panning/zooming so it stays smooth,
+        // then redraw at full quality once the gesture settles.
+        const qualityScale = interacting ? 0.45 : 1;
+        const nx = Math.max(18, Math.min(220, Math.round(plane.width / 4.5 * qualityScale)));
+        const ny = Math.max(18, Math.min(220, Math.round(plane.height / 4.5 * qualityScale)));
+        ctx.save();
+        ctx.globalAlpha = progress;
+        if (eq.op === '=') {
+          ctx.strokeStyle = eq.color;
+          ctx.lineWidth = 2.5;
+          marchingSquares(fn, left, right, bottom, top, nx, ny, plane, ctx);
+        } else {
+          const cmpFn = { '<': (v) => v < 0, '<=': (v) => v <= 0, '>': (v) => v > 0, '>=': (v) => v >= 0 }[eq.op] || ((v) => v < 0);
+          ctx.fillStyle = hexToRgba(eq.color, 0.22);
+          shadeRegion((x, y) => cmpFn(fn(x, y)), left, right, bottom, top, Math.max(16, Math.round(nx * 0.7)), Math.max(16, Math.round(ny * 0.7)), plane, ctx);
+          ctx.strokeStyle = eq.color;
+          ctx.lineWidth = 1.5;
+          marchingSquares(fn, left, right, bottom, top, nx, ny, plane, ctx);
+        }
+        ctx.restore();
+        continue;
+      }
+
+      if (!eq.compiled) continue;
       ctx.strokeStyle = eq.color;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       let started = false;
 
       if (eq.type === 'y') {
-        for (let px = 0; px <= plane.width; px += 1) {
+        const limit = Math.round(plane.width * progress);
+        for (let px = 0; px <= limit; px += 1) {
           const wx = plane.screenToWorld(px, 0).x;
           const wy = eq.compiled.eval(Object.assign({ x: wx }, eq.params));
           if (!isFinite(wy)) { started = false; continue; }
@@ -374,7 +607,8 @@ class Grapher2D {
           if (!started) { ctx.moveTo(s.x, s.y); started = true; } else ctx.lineTo(s.x, s.y);
         }
       } else if (eq.type === 'x') {
-        for (let py = 0; py <= plane.height; py += 1) {
+        const limit = Math.round(plane.height * progress);
+        for (let py = 0; py <= limit; py += 1) {
           const wy = plane.screenToWorld(0, py).y;
           const wx = eq.compiled.eval(Object.assign({ y: wy }, eq.params));
           if (!isFinite(wx)) { started = false; continue; }
@@ -383,7 +617,8 @@ class Grapher2D {
         }
       } else if (eq.type === 'r') {
         const steps = 2000;
-        for (let i = 0; i <= steps; i++) {
+        const limit = Math.round(steps * progress);
+        for (let i = 0; i <= limit; i++) {
           const theta = (i / steps) * Math.PI * 4; // two full turns for spirals etc
           const r = eq.compiled.eval(Object.assign({ theta }, eq.params));
           if (!isFinite(r)) { started = false; continue; }
@@ -393,9 +628,10 @@ class Grapher2D {
         }
       } else if (eq.type === 'param' && eq.compiledY) {
         const steps = 2000;
+        const limit = Math.round(steps * progress);
         const tMin = (eq.params.tMin !== undefined) ? eq.params.tMin : -10;
         const tMax = (eq.params.tMax !== undefined) ? eq.params.tMax : 10;
-        for (let i = 0; i <= steps; i++) {
+        for (let i = 0; i <= limit; i++) {
           const t = tMin + (tMax - tMin) * (i / steps);
           const wx = eq.compiled.eval(Object.assign({ t }, eq.params));
           const wy = eq.compiledY.eval(Object.assign({ t }, eq.params));

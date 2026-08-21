@@ -1,4 +1,44 @@
 /* Trigonometry tool: draggable unit circle synced with a live sin/cos/tan graph. */
+const TRIG_RECIPROCAL = { sin: 'csc', cos: 'sec', tan: 'cot', cot: 'tan', sec: 'cos', csc: 'sin' };
+
+// Exact (unsigned) values at the standard reference angles taught in every trig
+// class - used to show "\u221A3/2" instead of a decimal like 0.866 when the
+// current angle lands on (or very near) one of these.
+const TRIG_EXACT_BASE = {
+  0: { sin: '0', cos: '1', tan: '0', cot: 'undefined', sec: '1', csc: 'undefined' },
+  30: { sin: '1/2', cos: '\u221A3/2', tan: '\u221A3/3', cot: '\u221A3', sec: '2\u221A3/3', csc: '2' },
+  45: { sin: '\u221A2/2', cos: '\u221A2/2', tan: '1', cot: '1', sec: '\u221A2', csc: '\u221A2' },
+  60: { sin: '\u221A3/2', cos: '1/2', tan: '\u221A3', cot: '\u221A3/3', sec: '2', csc: '2\u221A3/3' },
+  90: { sin: '1', cos: '0', tan: 'undefined', cot: '0', sec: 'undefined', csc: '1' }
+};
+const TRIG_EXACT_SIGNS = {
+  1: { sin: 1, cos: 1, tan: 1, cot: 1, sec: 1, csc: 1 },
+  2: { sin: 1, cos: -1, tan: -1, cot: -1, sec: -1, csc: 1 },
+  3: { sin: -1, cos: -1, tan: 1, cot: 1, sec: -1, csc: -1 },
+  4: { sin: -1, cos: 1, tan: -1, cot: -1, sec: 1, csc: -1 }
+};
+
+// Returns an exact-form string (e.g. "\u221A3/2", "-1/2") for the given trig
+// function at angleDeg, or null if angleDeg isn't close to a standard
+// reference angle (0/30/45/60/90 and their reflections across all 4 quadrants).
+function exactTrigLabel(angleDeg, fnKey) {
+  const a = ((angleDeg % 360) + 360) % 360;
+  let ref, quadrant;
+  if (a <= 90) { ref = a; quadrant = 1; }
+  else if (a <= 180) { ref = 180 - a; quadrant = 2; }
+  else if (a <= 270) { ref = a - 180; quadrant = 3; }
+  else { ref = 360 - a; quadrant = 4; }
+
+  let matched = null;
+  for (const k of [0, 30, 45, 60, 90]) { if (Math.abs(ref - k) < 0.4) { matched = k; break; } }
+  if (matched === null) return null;
+
+  const base = TRIG_EXACT_BASE[matched][fnKey];
+  if (base === 'undefined' || base === '0') return base;
+  const sign = TRIG_EXACT_SIGNS[quadrant][fnKey];
+  return (sign < 0 ? '-' : '') + base;
+}
+
 class UnitCircle {
   constructor(canvas, onChange) {
     this.plane = new GraphPlane(canvas, { minSpan: 1.3, maxSpan: 1.3 });
@@ -83,6 +123,19 @@ class UnitCircle {
       ctx.fillText('sin \u03B8 = ' + py.toFixed(2), Oy.x + (px >= 0 ? 6 : -78), Oy.y - 6);
     }
   }
+
+  // All six trig ratios for the current angle (used by the side panel).
+  allValues() {
+    const a = this.angle;
+    const sin = Math.sin(a), cos = Math.cos(a);
+    return {
+      sin, cos,
+      tan: Math.abs(cos) < 1e-9 ? NaN : Math.tan(a),
+      cot: Math.abs(sin) < 1e-9 ? NaN : 1 / Math.tan(a),
+      sec: Math.abs(cos) < 1e-9 ? NaN : 1 / cos,
+      csc: Math.abs(sin) < 1e-9 ? NaN : 1 / sin
+    };
+  }
 }
 
 class TrigGrapher {
@@ -91,17 +144,46 @@ class TrigGrapher {
     this.plane.resetView(0, 0, 2.2);
     this.fn = 'sin';
     this.a = 1; this.b = 1; this.c = 0; // a*fn(b*x + c)
+    this.showReciprocal = false; // also overlay the reciprocal function (e.g. sin & csc together)
     this.angleMarker = null; // radians, or null
     this.plane.onDraw = (p) => this._draw(p);
   }
 
   setParams(fn, a, b, c) { this.fn = fn; this.a = a; this.b = b; this.c = c; this.plane.render(); }
+  setShowReciprocal(v) { this.showReciprocal = v; this.plane.render(); }
   setMarker(angle) { this.angleMarker = angle; this.plane.render(); }
 
-  _f(x) {
+  static evalFn(name, v) {
+    switch (name) {
+      case 'sin': return Math.sin(v);
+      case 'cos': return Math.cos(v);
+      case 'tan': return Math.tan(v);
+      case 'cot': return 1 / Math.tan(v);
+      case 'sec': return 1 / Math.cos(v);
+      case 'csc': return 1 / Math.sin(v);
+      default: return NaN;
+    }
+  }
+
+  _f(x, fnName) {
     const v = this.b * x + this.c;
-    const fn = { sin: Math.sin, cos: Math.cos, tan: Math.tan }[this.fn];
-    return this.a * fn(v);
+    return this.a * TrigGrapher.evalFn(fnName || this.fn, v);
+  }
+
+  _plotCurve(plane, fnName, color, width) {
+    const ctx = plane.ctx;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    let started = false;
+    for (let px = 0; px <= plane.width; px++) {
+      const wx = plane.screenToWorld(px, 0).x;
+      const wy = this._f(wx, fnName);
+      if (!isFinite(wy) || Math.abs(wy) > 1e4) { started = false; continue; }
+      const s = plane.worldToScreen(wx, wy);
+      if (!started) { ctx.moveTo(s.x, s.y); started = true; } else ctx.lineTo(s.x, s.y);
+    }
+    ctx.stroke();
   }
 
   _draw(plane) {
@@ -120,18 +202,10 @@ class TrigGrapher {
       }
     }
 
-    ctx.strokeStyle = '#e63946';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    let started = false;
-    for (let px = 0; px <= plane.width; px++) {
-      const wx = plane.screenToWorld(px, 0).x;
-      const wy = this._f(wx);
-      if (!isFinite(wy) || Math.abs(wy) > 1e4) { started = false; continue; }
-      const s = plane.worldToScreen(wx, wy);
-      if (!started) { ctx.moveTo(s.x, s.y); started = true; } else ctx.lineTo(s.x, s.y);
+    if (this.showReciprocal) {
+      this._plotCurve(plane, TRIG_RECIPROCAL[this.fn], '#94a3b8', 1.5);
     }
-    ctx.stroke();
+    this._plotCurve(plane, this.fn, '#e63946', 2.5);
 
     if (this.angleMarker !== null) {
       const wy = this._f(this.angleMarker);
