@@ -21,7 +21,11 @@ class GraphPlane {
   }
 
   _resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
+    // Measure the canvas element's own box, not its parent's - several canvases
+    // (e.g. the two stacked trig graphs, or a canvas plus its absolutely-positioned
+    // gizmo overlay) share one wrapper, so the parent's size isn't always this
+    // canvas's actual allotted size once flexbox/absolute positioning is applied.
+    const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.max(50, rect.width * dpr);
     this.canvas.height = Math.max(50, rect.height * dpr);

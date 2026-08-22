@@ -406,10 +406,12 @@ function insertButterflyExample() {
   const r = '((sin(2*t))^3 + (cos(0.5*t))^3)';
   grapher3d.addCurve(`${r}*cos(t)`, `${r}*sin(t)`, '0', '#dc2626', 0, Math.PI * 4);
   grapher3d.range = 2.5;
+  document.getElementById('rangeSlider').value = 2.5;
   renderSurfList();
   renderCurveList(grapher3d, 'curveList3d');
   grapher3d.render();
 }
+document.getElementById('rangeSlider').addEventListener('input', (e) => { grapher3d.range = parseFloat(e.target.value); grapher3d.render(); });
 document.getElementById('resSlider').addEventListener('input', (e) => { grapher3d.resolution = parseInt(e.target.value, 10); grapher3d.render(); });
 document.getElementById('wireframeToggle').addEventListener('change', (e) => { grapher3d.wireframe = e.target.checked; grapher3d.render(); });
 document.getElementById('resetView3d').addEventListener('click', () => grapher3d.resetView());
@@ -510,6 +512,39 @@ document.getElementById('addGeomPointBtn').addEventListener('click', () => {
 const unitCircle = new UnitCircle(document.getElementById('canvasUnit'), onAngleChange);
 const trigGrapher = new TrigGrapher(document.getElementById('canvasTrigGraph'));
 let useDegrees = false;
+
+/* ---- Draggable divider between the unit circle and the function graph ----
+ * Drag the handle to enlarge one panel while the other shrinks to match. */
+(function setupTrigResizer() {
+  const handle = document.getElementById('trigResizeHandle');
+  const topCanvas = document.getElementById('canvasUnit');
+  const bottomCanvas = document.getElementById('canvasTrigGraph');
+  const container = document.getElementById('trigCanvas2dWrap');
+  let dragging = false;
+
+  const applyResize = (clientY) => {
+    const rect = container.getBoundingClientRect();
+    const handleH = handle.getBoundingClientRect().height || 14;
+    let ratio = (clientY - rect.top) / (rect.height - handleH);
+    ratio = Math.max(0.15, Math.min(0.85, ratio));
+    topCanvas.style.flex = `${ratio} 1 0%`;
+    bottomCanvas.style.flex = `${1 - ratio} 1 0%`;
+    unitCircle.plane._resize();
+    trigGrapher.plane._resize();
+  };
+
+  handle.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    applyResize(e.clientY);
+  });
+  const stopDrag = () => { dragging = false; };
+  handle.addEventListener('pointerup', stopDrag);
+  handle.addEventListener('pointercancel', stopDrag);
+})();
 
 function onAngleChange(angleRad) {
   const deg = angleRad * 180 / Math.PI;

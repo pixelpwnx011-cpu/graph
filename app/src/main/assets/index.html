@@ -126,6 +126,9 @@
             </div>
             <div id="timeValueLabel" class="result-box small">t = 0.00</div>
             <hr/>
+            <label class="field-label">Domain size (how far x, y extend)</label>
+            <input type="range" id="rangeSlider" min="1" max="15" step="0.5" value="4" />
+            <p class="hint">If a formula's shape repeats or looks tangled (common with periodic pieces like sin(y/a)), shrink this.</p>
             <label class="field-label">Resolution</label>
             <input type="range" id="resSlider" min="10" max="90" value="42" />
             <label class="switch-row"><span>Wireframe only</span><input type="checkbox" id="wireframeToggle" /></label>
@@ -231,6 +234,7 @@
         </aside>
         <div class="canvas-wrap trig-canvases" id="trigCanvas2dWrap">
           <canvas id="canvasUnit"></canvas>
+          <div class="resize-handle" id="trigResizeHandle"><div class="resize-grip"></div></div>
           <canvas id="canvasTrigGraph"></canvas>
         </div>
         <div class="canvas-wrap hidden" id="trigCanvas3dWrap">

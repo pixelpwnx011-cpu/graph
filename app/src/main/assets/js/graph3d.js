@@ -137,7 +137,10 @@ class Grapher3D {
   resetTime() { this.time = 0; if (this.onTimeChange) this.onTimeChange(this.time); this.render(); }
 
   _resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
+    // Measure the canvas's own box, not its parent's (see the same fix in
+    // GraphPlane._resize for why - keeps this correct if it ever shares a
+    // wrapper with another sized element instead of just an absolute overlay).
+    const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.max(50, rect.width * dpr);
     this.canvas.height = Math.max(50, rect.height * dpr);
@@ -379,29 +382,37 @@ class Grapher3D {
     for (const q of quads) {
       const [r, g, b] = this._heatColor(q.t);
       const L = q.light;
-      const fillColor = `rgb(${Math.round(r * L)},${Math.round(g * L)},${Math.round(b * L)})`;
-      ctx.fillStyle = fillColor;
-      ctx.beginPath();
-      ctx.moveTo(q.proj[0].x, q.proj[0].y);
-      ctx.lineTo(q.proj[1].x, q.proj[1].y);
-      ctx.lineTo(q.proj[2].x, q.proj[2].y);
-      ctx.lineTo(q.proj[3].x, q.proj[3].y);
-      ctx.closePath();
+      ctx.fillStyle = `rgb(${Math.round(r * L)},${Math.round(g * L)},${Math.round(b * L)})`;
       if (this.wireframe) {
+        ctx.beginPath();
+        ctx.moveTo(q.proj[0].x, q.proj[0].y);
+        ctx.lineTo(q.proj[1].x, q.proj[1].y);
+        ctx.lineTo(q.proj[2].x, q.proj[2].y);
+        ctx.lineTo(q.proj[3].x, q.proj[3].y);
+        ctx.closePath();
         ctx.strokeStyle = s.color;
         ctx.lineWidth = 1;
         ctx.stroke();
-      } else {
-        ctx.fill();
-        // Outline each quad in its OWN fill colour (not a contrasting dark line).
-        // Canvas rasterizes adjacent polygon edges with slightly different
-        // anti-aliasing, which otherwise shows up as a visible hairline grid -
-        // this "self-outline" bridges that gap so a dense mesh reads as one
-        // smooth curved surface instead of a faceted, blocky one.
-        ctx.strokeStyle = fillColor;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        continue;
       }
+      // Fill only - no per-quad outline stroke. At a grazing/edge-on viewing
+      // angle a curved surface's quads can overlap heavily in screen space, and
+      // stroking every one of them (even in a matching colour) stacks up into a
+      // dense mass of lines that looks like it's "sticking out" of the surface.
+      // Instead, nudge each vertex slightly outward from the quad's centre
+      // before filling, which closes the hairline anti-aliasing seams between
+      // neighbouring quads without adding any extra stroked ink.
+      const cx = (q.proj[0].x + q.proj[1].x + q.proj[2].x + q.proj[3].x) / 4;
+      const cy = (q.proj[0].y + q.proj[1].y + q.proj[2].y + q.proj[3].y) / 4;
+      ctx.beginPath();
+      q.proj.forEach((p, idx) => {
+        const dx = p.x - cx, dy = p.y - cy;
+        const len = Math.hypot(dx, dy) || 1;
+        const ex = p.x + (dx / len) * 0.5, ey = p.y + (dy / len) * 0.5;
+        if (idx === 0) ctx.moveTo(ex, ey); else ctx.lineTo(ex, ey);
+      });
+      ctx.closePath();
+      ctx.fill();
     }
   }
 

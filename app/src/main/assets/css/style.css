@@ -63,8 +63,8 @@ input, select { user-select: text; }
 .canvas-wrap canvas.hidden { display: none; }
 .hidden { display: none !important; }
 
-#canvas2d, #canvas3d { position: absolute; top: 0; left: 0; }
-#gizmoCanvas {
+#canvas2d, #canvas3d, #canvasTrig3D { position: absolute; top: 0; left: 0; }
+#gizmoCanvas, #gizmoTrigCanvas {
   position: absolute; top: 12px; right: 12px; width: 84px; height: 84px;
   background: rgba(255,255,255,0.85); border-radius: 50%; box-shadow: 0 2px 8px rgba(15,23,42,.15);
   touch-action: none; cursor: pointer;
@@ -75,7 +75,15 @@ input, select { user-select: text; }
 .mode-btn.active { background: #2563eb; color: #fff; }
 
 .trig-layout .trig-canvases { display: flex; flex-direction: column; }
-.trig-canvases canvas { flex: 1; min-height: 0; border-bottom: 1px solid #e2e8f0; }
+.trig-canvases canvas { flex: 1 1 0%; min-height: 40px; border-bottom: none; }
+
+.resize-handle {
+  flex-shrink: 0; height: 14px; background: #f1f5f9; cursor: row-resize;
+  touch-action: none; display: flex; align-items: center; justify-content: center;
+  border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; position: relative; z-index: 2;
+}
+.resize-handle:active { background: #dbeafe; }
+.resize-grip { width: 44px; height: 4px; border-radius: 2px; background: #94a3b8; }
 
 /* ---------- Equation list ---------- */
 .eq-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
