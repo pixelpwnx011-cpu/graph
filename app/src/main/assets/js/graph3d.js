@@ -20,7 +20,7 @@ class Grapher3D {
     this.pitch = 0.55;
     this.zoom = 1;
     this.range = 4;       // x,y in [-range, range]
-    this.resolution = 42; // grid subdivisions - full-detail default; see _shouldReduceQuality()
+    this.resolution = 60; // fixed high-quality mesh density - no manual slider; see _shouldReduceQuality() for the adaptive drop during interaction/animation
     this.wireframe = false;
     this.surfaces = [];   // {expr, compiled, color, error, params}
     this.curves = [];     // {exprX,exprY,exprZ, compiled..., tMin,tMax, color, markerT}
@@ -137,15 +137,14 @@ class Grapher3D {
   resetTime() { this.time = 0; if (this.onTimeChange) this.onTimeChange(this.time); this.render(); }
 
   _resize() {
-    // Measure the canvas's own box, not its parent's (see the same fix in
-    // GraphPlane._resize for why - keeps this correct if it ever shares a
-    // wrapper with another sized element instead of just an absolute overlay).
+    // Measure the canvas's own box, not its parent's - and don't mirror that
+    // measurement back into an inline style, or a 0x0 reading (e.g. while its
+    // tab is still hidden) would permanently pin the canvas at 0x0. CSS alone
+    // controls the displayed size; see the matching note in GraphPlane._resize.
     const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.max(50, rect.width * dpr);
     this.canvas.height = Math.max(50, rect.height * dpr);
-    this.canvas.style.width = rect.width + 'px';
-    this.canvas.style.height = rect.height + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.width = rect.width; this.height = rect.height;
     this.render();

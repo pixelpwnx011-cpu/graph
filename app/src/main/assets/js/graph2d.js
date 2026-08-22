@@ -25,12 +25,18 @@ class GraphPlane {
     // (e.g. the two stacked trig graphs, or a canvas plus its absolutely-positioned
     // gizmo overlay) share one wrapper, so the parent's size isn't always this
     // canvas's actual allotted size once flexbox/absolute positioning is applied.
+    //
+    // Important: we deliberately do NOT write rect.width/height back as an inline
+    // canvas.style.width/height. CSS (width:100%, flex:1 1 0%, etc.) is what
+    // actually controls the displayed size; if we mirrored a measurement taken
+    // while the canvas was hidden (0x0, e.g. on a tab that isn't active yet)
+    // back into an inline style, that inline style would then permanently pin
+    // the canvas at 0x0 - every later _resize() would just re-measure that same
+    // 0x0 box forever, which is exactly what left the trig graphs blank.
     const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.max(50, rect.width * dpr);
     this.canvas.height = Math.max(50, rect.height * dpr);
-    this.canvas.style.width = rect.width + 'px';
-    this.canvas.style.height = rect.height + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.width = rect.width;
     this.height = rect.height;
@@ -356,11 +362,49 @@ class Grapher2D {
     this._nextId = 1;
     this.fitPoints = [];      // points used for "draw / enter points -> equation"
     this.drawPointsMode = false;
+    this.fitSnapEnabled = false; // round fit points to the nearest grid line, like the geometry tool
     this._draggingFitIdx = -1;
-    this.plane.onDraw = (p) => { this._drawEquations(p); this._drawFitPoints(p); };
+    this.solveMarkers = [];   // {x, y, label} overlay dots from the Solve panel (roots, vertex, etc.)
+    this.plane.onDraw = (p) => { this._drawEquations(p); this._drawFitPoints(p); this._drawSolveMarkers(p); };
     this.plane.onPointerDown = (e, p) => this._handlePointerDown(e, p);
     this.plane.onPointerMove = (e, p, dx, dy) => this._handlePointerMove(e, p, dx, dy);
     this.plane.onPointerUp = () => { this._draggingFitIdx = -1; };
+  }
+
+  // Snap helper for fit points - mirrors GeometryTool's _snap.
+  _snapFitPoint(x, y) {
+    if (!this.fitSnapEnabled) return { x: (Math.round(x * 100) / 100) || 0, y: (Math.round(y * 100) / 100) || 0 };
+    const step = this.plane.getGridStep();
+    return { x: (Math.round(x / step) * step) || 0, y: (Math.round(y / step) * step) || 0 };
+  }
+  setFitSnapEnabled(on) {
+    this.fitSnapEnabled = on;
+    if (on) {
+      this.fitPoints = this.fitPoints.map((p) => this._snapFitPoint(p.x, p.y));
+      this.plane.render();
+      if (this.onFitPointsChanged) this.onFitPointsChanged(this.fitPoints);
+    }
+  }
+
+  setSolveMarkers(markers) { this.solveMarkers = markers || []; this.plane.render(); }
+  clearSolveMarkers() { this.solveMarkers = []; this.plane.render(); }
+
+  _drawSolveMarkers(plane) {
+    const ctx = plane.ctx;
+    ctx.font = 'bold 12px sans-serif';
+    this.solveMarkers.forEach((m) => {
+      const s = plane.worldToScreen(m.x, m.y);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#7c3aed';
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#5b21b6';
+      const label = m.label ? `${m.label} (${Math.round(m.x * 100) / 100}, ${Math.round(m.y * 100) / 100})` : '';
+      if (label) ctx.fillText(label, s.x + 10, s.y - 10);
+    });
   }
 
   // Reads a single typed-in line ("y = sin(x)", "x^2+y^2=25", "x=cos(t), y=sin(t)", "sin(x)")
@@ -456,7 +500,7 @@ class Grapher2D {
       if (Math.hypot(s.x - px, s.y - py) < 16) { this._draggingFitIdx = i; return; }
     }
     if (this.drawPointsMode) {
-      this.fitPoints.push({ x: Math.round(world.x * 100) / 100, y: Math.round(world.y * 100) / 100 });
+      this.fitPoints.push(this._snapFitPoint(world.x, world.y));
       if (this.onFitPointsChanged) this.onFitPointsChanged(this.fitPoints);
       plane.render();
     }
@@ -467,7 +511,7 @@ class Grapher2D {
       const rect = plane.canvas.getBoundingClientRect();
       const px = e.clientX - rect.left, py = e.clientY - rect.top;
       const world = plane.screenToWorld(px, py);
-      this.fitPoints[this._draggingFitIdx] = { x: Math.round(world.x * 100) / 100, y: Math.round(world.y * 100) / 100 };
+      this.fitPoints[this._draggingFitIdx] = this._snapFitPoint(world.x, world.y);
       if (this.onFitPointsChanged) this.onFitPointsChanged(this.fitPoints);
       plane.render();
       return;

@@ -76,8 +76,29 @@
 
             <hr/>
             <details class="collapsible" open>
+              <summary>🧮 Solve Quadratic / Cubic</summary>
+              <p class="hint">Enter an equation like <code>x^2-5x+6</code> or <code>y=2x^3-3x+1</code>, pick the degree, and get the roots plus the vertex (quadratic) or inflection point (cubic). Or give one known root and let it find the rest.</p>
+              <label class="field-label">Degree</label>
+              <select id="solveDegree">
+                <option value="2">Quadratic (ax&sup2; + bx + c)</option>
+                <option value="3">Cubic (ax&sup3; + bx&sup2; + cx + d)</option>
+              </select>
+              <label class="field-label">Equation</label>
+              <input type="text" id="solveEqInput" placeholder="e.g. x^2 - 5x + 6" />
+              <label class="switch-row wide"><span>I already know one root</span><input type="checkbox" id="solveKnownRootToggle" /></label>
+              <div class="row" id="solveKnownRootRow" style="display:none">
+                <input type="number" id="solveKnownRootInput" step="any" placeholder="known root value" />
+              </div>
+              <button class="btn btn-primary full" id="solveBtn">Solve</button>
+              <div id="solveResult" class="result-box"></div>
+              <button class="btn full" id="solvePlotBtn" style="display:none">Plot on graph</button>
+            </details>
+
+            <hr/>
+            <details class="collapsible" open>
               <summary>✏️ Draw / Enter Points &rarr; Equation</summary>
               <p class="hint">Tap <b>Place Points</b>, then tap the graph to mark points (or type coordinates below). Pick a curve type and generate its equation.</p>
+              <label class="switch-row wide"><span>🧲 Round off points to grid</span><input type="checkbox" id="fitSnapToggle" /></label>
               <div class="row">
                 <button class="btn" id="togglePlacePoints">📍 Place Points: Off</button>
                 <button class="btn" id="clearFitPoints">Clear</button>
@@ -129,8 +150,6 @@
             <label class="field-label">Domain size (how far x, y extend)</label>
             <input type="range" id="rangeSlider" min="1" max="15" step="0.5" value="4" />
             <p class="hint">If a formula's shape repeats or looks tangled (common with periodic pieces like sin(y/a)), shrink this.</p>
-            <label class="field-label">Resolution</label>
-            <input type="range" id="resSlider" min="10" max="90" value="42" />
             <label class="switch-row"><span>Wireframe only</span><input type="checkbox" id="wireframeToggle" /></label>
             <button class="btn full" id="resetView3d">Reset View</button>
             <p class="hint">Drag with one finger to rotate. Pinch (or scroll) to zoom. Tap a coloured ball on the corner gizmo to snap to that view &mdash; just like Blender's viewport gizmo.</p>
@@ -249,6 +268,7 @@
 
 <script src="js/parser.js"></script>
 <script src="js/fit.js"></script>
+<script src="js/solve.js"></script>
 <script src="js/graph2d.js"></script>
 <script src="js/graph3d.js"></script>
 <script src="js/geometry.js"></script>

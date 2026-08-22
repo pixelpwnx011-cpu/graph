@@ -229,11 +229,12 @@ placeBtn.addEventListener('click', () => {
   placeBtn.classList.toggle('btn-primary', grapher2d.drawPointsMode);
 });
 document.getElementById('clearFitPoints').addEventListener('click', () => { grapher2d.clearFitPoints(); renderFitPointsTable(); document.getElementById('fitResult').innerHTML = ''; });
+document.getElementById('fitSnapToggle').addEventListener('change', (e) => grapher2d.setFitSnapEnabled(e.target.checked));
 document.getElementById('addFitPointBtn').addEventListener('click', () => {
   const x = parseFloat(document.getElementById('fitX').value);
   const y = parseFloat(document.getElementById('fitY').value);
   if (isFinite(x) && isFinite(y)) {
-    grapher2d.fitPoints.push({ x, y });
+    grapher2d.fitPoints.push(grapher2d._snapFitPoint(x, y));
     grapher2d.plane.render();
     renderFitPointsTable();
     document.getElementById('fitX').value = ''; document.getElementById('fitY').value = '';
@@ -251,6 +252,84 @@ document.getElementById('generateFitBtn').addEventListener('click', () => {
   } catch (err) {
     resultBox.innerHTML = `<span style="color:#dc2626">${err.message}</span>`;
   }
+});
+
+/* ---- Solve quadratic/cubic: roots + vertex/inflection point ---- */
+let lastSolve = null; // remembered so "Plot on graph" can use it after Solve is pressed
+document.getElementById('solveKnownRootToggle').addEventListener('change', (e) => {
+  document.getElementById('solveKnownRootRow').style.display = e.target.checked ? '' : 'none';
+});
+document.getElementById('solveBtn').addEventListener('click', () => {
+  const degree = parseInt(document.getElementById('solveDegree').value, 10);
+  const eqStr = document.getElementById('solveEqInput').value;
+  const knownChecked = document.getElementById('solveKnownRootToggle').checked;
+  const knownVal = parseFloat(document.getElementById('solveKnownRootInput').value);
+  const resultBox = document.getElementById('solveResult');
+  const plotBtn = document.getElementById('solvePlotBtn');
+  plotBtn.style.display = 'none';
+  lastSolve = null;
+  try {
+    const coeffs = PolySolve.extractPolyCoeffs(eqStr, degree);
+    let html = '';
+    const markers = [];
+
+    if (degree === 2) {
+      const [c, b, a] = coeffs; // low -> high degree
+      if (knownChecked && isFinite(knownVal)) {
+        const r = PolySolve.otherRootFromOneQuadratic(a, b, c, knownVal);
+        html += `<b>Known root:</b> x = ${knownVal}<br/><b>Other root:</b> x = ${r.other}<br/>`;
+        html += `<b>Vertex:</b> (${r.vertex.x}, ${r.vertex.y})`;
+        markers.push({ x: knownVal, y: 0, label: 'root' }, { x: r.other, y: 0, label: 'root' }, { x: r.vertex.x, y: r.vertex.y, label: 'vertex' });
+      } else {
+        const r = PolySolve.solveQuadratic(a, b, c);
+        if (r.roots.length === 2) html += `<b>Roots:</b> x = ${r.roots[0]}, x = ${r.roots[1]}<br/>`;
+        else if (r.roots.length === 1) html += `<b>Repeated root:</b> x = ${r.roots[0]}<br/>`;
+        else html += `<b>No real roots</b> (x = ${r.complexRoots[0].re} \u00B1 ${Math.abs(r.complexRoots[0].im)}i)<br/>`;
+        html += `<b>Vertex:</b> (${r.vertex.x}, ${r.vertex.y})`;
+        r.roots.forEach((root) => markers.push({ x: root, y: 0, label: 'root' }));
+        markers.push({ x: r.vertex.x, y: r.vertex.y, label: 'vertex' });
+      }
+    } else {
+      const [d, c, b, a] = coeffs; // low -> high degree: d + c x + b x^2 + a x^3
+      if (knownChecked && isFinite(knownVal)) {
+        const def = PolySolve.deflateCubic(a, b, c, d, knownVal);
+        if (Math.abs(def.remainder) > 1e-3 * (Math.abs(d) + Math.abs(c) + Math.abs(b) + Math.abs(a) + 1)) {
+          throw new Error(`x = ${knownVal} doesn't actually satisfy that equation.`);
+        }
+        const q = PolySolve.solveQuadratic(def.qa, def.qb, def.qc);
+        html += `<b>Known root:</b> x = ${knownVal}<br/>`;
+        if (q.roots.length) html += `<b>Other roots:</b> x = ${q.roots.join(', x = ')}<br/>`;
+        else html += `<b>No other real roots</b><br/>`;
+        const ix = PolySolve.cubicInflection(a, b);
+        const iy = a * ix * ix * ix + b * ix * ix + c * ix + d;
+        html += `<b>Inflection point:</b> (${PolySolve.round(ix)}, ${PolySolve.round(iy)})`;
+        markers.push({ x: knownVal, y: 0, label: 'root' });
+        q.roots.forEach((root) => markers.push({ x: root, y: 0, label: 'root' }));
+        markers.push({ x: PolySolve.round(ix), y: PolySolve.round(iy), label: 'inflection' });
+      } else {
+        const roots = PolySolve.solveCubic(a, b, c, d);
+        html += `<b>Real root${roots.length > 1 ? 's' : ''}:</b> x = ${roots.join(', x = ')}<br/>`;
+        const ix = PolySolve.cubicInflection(a, b);
+        const iy = a * ix * ix * ix + b * ix * ix + c * ix + d;
+        html += `<b>Inflection point:</b> (${PolySolve.round(ix)}, ${PolySolve.round(iy)})`;
+        roots.forEach((root) => markers.push({ x: root, y: 0, label: 'root' }));
+        markers.push({ x: PolySolve.round(ix), y: PolySolve.round(iy), label: 'inflection' });
+      }
+    }
+    resultBox.innerHTML = html;
+    lastSolve = { eqStr };
+    grapher2d.setSolveMarkers(markers);
+    plotBtn.style.display = '';
+  } catch (err) {
+    resultBox.innerHTML = `<span style="color:#dc2626">${err.message}</span>`;
+    grapher2d.clearSolveMarkers();
+  }
+});
+document.getElementById('solvePlotBtn').addEventListener('click', () => {
+  if (!lastSolve) return;
+  grapher2d.addEquation(lastSolve.eqStr);
+  renderEqList();
+  grapher2d.plane.render();
 });
 
 /* ================= 3D GRAPHING ================= */
@@ -412,7 +491,6 @@ function insertButterflyExample() {
   grapher3d.render();
 }
 document.getElementById('rangeSlider').addEventListener('input', (e) => { grapher3d.range = parseFloat(e.target.value); grapher3d.render(); });
-document.getElementById('resSlider').addEventListener('input', (e) => { grapher3d.resolution = parseInt(e.target.value, 10); grapher3d.render(); });
 document.getElementById('wireframeToggle').addEventListener('change', (e) => { grapher3d.wireframe = e.target.checked; grapher3d.render(); });
 document.getElementById('resetView3d').addEventListener('click', () => grapher3d.resetView());
 
@@ -620,12 +698,12 @@ document.getElementById('trigMode2dBtn').addEventListener('click', () => setTrig
 document.getElementById('trigMode3dBtn').addEventListener('click', () => setTrigMode('3d'));
 document.getElementById('resetViewTrig3d').addEventListener('click', () => trigGrapher3d.resetView());
 
-/* ================= Seed demo content ================= */
-// The polar-rose "butterfly" r = (sin(2θ))^3 + (cos(0.5θ))^3 is the default
-// graph shown to the teacher in both 2D (as a polar curve) and 3D (as the
-// same curve traced out in space, free to rotate).
-grapher2d.addEquation('r = (sin(2*theta))^3 + (cos(0.5*theta))^3');
+/* ================= No default graph ================= */
+// Start with a clean, empty canvas in both 2D and 3D - the person can type
+// their own equation, use the Solve panel, or tap "Insert Butterfly Curve
+// Example" / "Insert Butterfly Example" if they want to see a demo.
 renderEqList();
-insertButterflyExample();
+renderSurfList();
+renderCurveList(grapher3d, 'curveList3d');
 
 onAngleChange(unitCircle.angle);
